@@ -11,11 +11,15 @@ afterEach(async () => { await Promise.all(apps.splice(0).map((a) => a.close()));
 
 const hello: ChatFn = async () => (async function* () { yield { choices: [{ delta: { content: 'hello' } }] }; })();
 
+let dataDir = '';
 async function start(chat: ChatFn = hello) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'av-app-'));
+  dataDir = mkdtempSync(path.join(tmpdir(), 'av-app-'));
   mkdirSync(path.join(dataDir, 'agents'));
   writeFileSync(path.join(dataDir, 'agents', 'nova.json'), JSON.stringify({ name: 'Nova', connection: 'c', model: 'm' }));
-  const app = buildApp({ dataDir, chat, exec: async () => { throw new Error('no docker in this test'); } });
+  writeFileSync(path.join(dataDir, 'models.json'), JSON.stringify([{ id: 'c', baseURL: 'http://x', apiKeyEnv: 'NOPE', defaultModel: 'm' }]));
+  const app = buildApp({
+    dataDir, chat, exec: async () => { throw new Error('no docker in this test'); }, removeSandbox: async () => {},
+  });
   apps.push(app);
   await app.listen({ host: '127.0.0.1', port: 0 });
   return `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -42,7 +46,7 @@ describe('http api', () => {
     expect(sseEvents(await replay.text())).toHaveLength(6);
     const resumed = await fetch(`${url}/runs/run1/events`, { headers: { 'last-event-id': '3' } });
     expect(sseEvents(await resumed.text()).map((e) => e.type)).toEqual(['TEXT_MESSAGE_END', 'RUN_FINISHED']);
-    expect(await (await fetch(`${url}/runs`)).json()).toMatchObject([{ runId: 'run1', live: false }]);
+    expect(await (await fetch(`${url}/runs`)).json()).toMatchObject([{ runId: 'run1', live: false, target: 'agent:nova', agents: ['nova'] }]);
   });
 
   it('rejects unsafe targets and run ids', async () => {
@@ -69,10 +73,36 @@ describe('http api', () => {
     expect((await fetch(`${url}/runs/run5/cancel`, { method: 'POST' })).status).toBe(404);
   });
 
-  it('lists agents with public fields only', async () => {
+  it('creates, updates and deletes agents with reference checks', async () => {
     const url = await start();
-    expect(await (await fetch(`${url}/agents`)).json()).toEqual([
-      { id: 'nova', name: 'Nova', role: '', avatar: { model: 'default.glb', color: '#5b8def' } },
-    ]);
+    const send = (method: string, p: string, payload?: unknown) => fetch(`${url}${p}`, {
+      method, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined,
+    });
+    const milo = { id: 'milo', name: 'Milo', connection: 'c', tools: ['sandbox_run'] };
+    const created = await send('POST', '/agents', milo);
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({ id: 'milo', maxSteps: 6, sandbox: { network: false } });
+    expect((await send('POST', '/agents', milo)).status).toBe(409);
+    expect((await send('POST', '/agents', { ...milo, id: 'x1', connection: 'ghost' })).status).toBe(400);
+    expect((await send('POST', '/agents', { ...milo, id: 'x2', tools: ['rm_rf'] })).status).toBe(400);
+    expect((await send('POST', '/agents', { ...milo, id: 'x3', sandbox: { image: '--privileged', network: false } })).status).toBe(400);
+
+    expect((await send('PUT', '/agents/milo', { ...milo, name: 'Milo 2', maxSteps: 3 })).status).toBe(200);
+    expect((await (await fetch(`${url}/agents`)).json()).map((a: { name: string }) => a.name)).toEqual(['Milo 2', 'Nova']);
+    expect((await send('DELETE', '/agents/milo')).status).toBe(204);
+    expect((await send('PUT', '/agents/milo', milo)).status).toBe(404);
+  });
+
+  it('serves workspace files, models and tools', async () => {
+    const url = await start();
+    mkdirSync(path.join(dataDir, 'workspaces', 'nova', 'src'), { recursive: true });
+    writeFileSync(path.join(dataDir, 'workspaces', 'nova', 'src', 'a.py'), 'print(1)');
+    expect(await (await fetch(`${url}/agents/nova/files`)).json()).toEqual(['src/a.py']);
+    expect(await (await fetch(`${url}/agents/nova/files/src/a.py`)).text()).toBe('print(1)');
+    expect((await fetch(`${url}/agents/nova/files/nope.txt`)).status).toBe(404);
+    expect((await fetch(`${url}/agents/nova/files/..%2F..%2Fmodels.json`)).status).toBe(400);
+    expect((await fetch(`${url}/agents/ghost/files`)).status).toBe(404);
+    expect(await (await fetch(`${url}/models`)).json()).toEqual([{ id: 'c', baseURL: 'http://x', defaultModel: 'm' }]);
+    expect((await (await fetch(`${url}/tools`)).json()).map((t: { name: string }) => t.name)).toContain('sandbox_run');
   });
 });

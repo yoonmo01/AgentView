@@ -14,6 +14,7 @@ const DEFS: ToolDef[] = [
 ];
 
 export const toolDefs = (agent: Agent): ToolDef[] => DEFS.filter((d) => agent.tools.includes(d.function.name));
+export const listTools = () => DEFS.map(({ function: f }) => ({ name: f.name, description: f.description }));
 
 const MAX_OUT = 4_000; // tool output goes back into the model context, so keep it short
 const clip = (s: string) => (s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}\n...(${s.length - MAX_OUT} more characters cut)` : s);
