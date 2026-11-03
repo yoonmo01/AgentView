@@ -11,7 +11,18 @@ export type AgentDef = {
   avatar: { model: string; color: string };
   maxSteps: number;
 };
-export type ModelConn = { id: string; baseURL: string; defaultModel?: string; maxTokens?: number };
+/** Mirrors the server's Team. Members are agent ids or `team:<id>`. */
+export type TeamDef = {
+  id: string;
+  name: string;
+  pattern: 'supervisor' | 'parallel' | 'debate';
+  main: string;
+  members: string[];
+  limits: { maxDepth: number; maxCalls: number; timeoutSec: number; rounds: number };
+  room: number | null;
+};
+export const PATTERN_LABEL: Record<TeamDef['pattern'], string> = { supervisor: '메인-하위', parallel: '병렬 분담', debate: '토론' };
+export type ModelConn ={ id: string; baseURL: string; defaultModel?: string; maxTokens?: number };
 export type ToolInfo = { name: string; description: string };
 
 /** Read an SSE response body (POST /agui answers with one; EventSource can only GET). */
