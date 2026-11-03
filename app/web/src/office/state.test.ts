@@ -43,6 +43,22 @@ describe('office state', () => {
     expect(s.agents.nova.status).toBe('error');
   });
 
+  it('tracks delegation links and the live team run until it ends', () => {
+    const team: AgUiEvent = { type: 'CUSTOM', name: 'agentview.run_info', value: { main: 'atlas', pattern: 'debate', agents: [{ id: 'atlas' }, { id: 'nova' }] } };
+    const mid = feed([
+      team,
+      { type: 'SUBAGENT_STARTED', subagentRunId: 's1', name: 'nova' },
+      { type: 'SUBAGENT_STARTED', subagentRunId: 's2', name: 'team:inner' }, // teams are not drawn
+    ]);
+    expect(mid.links).toEqual({ 'r1/s1': { from: 'atlas', to: 'nova' } });
+    expect(mid.runs.r1).toMatchObject({ pattern: 'debate', agents: ['atlas', 'nova'], live: true });
+    const done = feed([team, { type: 'SUBAGENT_STARTED', subagentRunId: 's1', name: 'nova' }, { type: 'SUBAGENT_FINISHED', subagentRunId: 's1' }]);
+    expect(done.links).toEqual({});
+    const ended = feed([team, { type: 'SUBAGENT_STARTED', subagentRunId: 's1', name: 'nova' }, { type: 'RUN_FINISHED' }]);
+    expect(ended.links).toEqual({});
+    expect(ended.runs.r1.live).toBe(false);
+  });
+
   it('shows agents waiting for another run as queued', () => {
     expect(feed([{ type: 'CUSTOM', name: 'agentview.queued', value: { agentId: 'nova' } }]).agents.nova.status).toBe('queued');
   });
