@@ -23,7 +23,8 @@ export type TeamDef = {
 };
 export const PATTERN_LABEL: Record<TeamDef['pattern'], string> = { supervisor: '메인-하위', parallel: '병렬 분담', debate: '토론' };
 export type ModelConn ={ id: string; baseURL: string; defaultModel?: string; maxTokens?: number };
-export type ToolInfo = { name: string; description: string };
+/** `server` is null for the built-in sandbox tools, else the MCP server name. */
+export type ToolInfo = { name: string; description: string; server: string | null };
 
 /** Read an SSE response body (POST /agui answers with one; EventSource can only GET). */
 export async function readSse(res: Response, onEvent: (e: { type: string; [key: string]: any }) => void): Promise<void> {
