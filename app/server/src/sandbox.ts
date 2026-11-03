@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile as fsReadFile, readdir, realpath, stat, writeFile as fsWriteFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Agent } from './store.ts';
 
 export const workspaceDir = (dataDir: string, agentId: string) => path.resolve(dataDir, 'workspaces', agentId);
 
@@ -42,4 +44,74 @@ export async function writeFile(root: string, rel: string, content: unknown): Pr
   const p = await safePath(root, rel);
   await mkdir(path.dirname(p), { recursive: true });
   await fsWriteFile(p, content);
+}
+
+export type ExecResult = { stdout: string; stderr: string; exitCode: number };
+
+function run(args: string[], signal?: AbortSignal): Promise<ExecResult> {
+  return new Promise((resolve, reject) => {
+    execFile('docker', args, { maxBuffer: 10 * 1024 * 1024, signal }, (err, stdout, stderr) => {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (err && typeof code !== 'number') return reject(err); // docker missing, or aborted
+      resolve({ stdout, stderr, exitCode: typeof code === 'number' ? code : 0 });
+    });
+  });
+}
+
+async function docker(args: string[]): Promise<string> {
+  const r = await run(args);
+  if (r.exitCode !== 0) throw new Error(r.stderr.trim() || `docker ${args[0]} exited ${r.exitCode}`);
+  return r.stdout.trim();
+}
+
+export const containerName = (agentId: string) => `agentview-${agentId}`;
+const configLabel = (a: Agent) => `${a.sandbox.image}|net=${a.sandbox.network}`;
+
+/** Create, start or recreate the agent's container. Files live on the host, so recreating is safe. */
+export async function ensureContainer(agent: Agent, dataDir: string): Promise<void> {
+  const name = containerName(agent.id);
+  const state = await docker(['inspect', '-f', '{{.State.Running}} {{index .Config.Labels "agentview.config"}}', name]).catch(() => null);
+  if (state !== null) {
+    const [running, ...label] = state.split(' ');
+    if (label.join(' ') === configLabel(agent)) {
+      if (running !== 'true') await docker(['start', name]);
+      return;
+    }
+    await docker(['rm', '-f', name]);
+  }
+  const ws = workspaceDir(dataDir, agent.id);
+  await mkdir(ws, { recursive: true });
+  await docker([
+    'run', '-d', '--name', name, '--label', `agentview.config=${configLabel(agent)}`,
+    ...(agent.sandbox.network ? [] : ['--network', 'none']),
+    '--memory', '1g', '--cpus', '1',
+    '-v', `${ws}:/work`, '-w', '/work',
+    agent.sandbox.image, 'tail', '-f', '/dev/null',
+  ]);
+}
+
+const idleTimers = new Map<string, NodeJS.Timeout>();
+const IDLE_MS = 30 * 60_000;
+
+export async function runInSandbox(agent: Agent, dataDir: string, command: string, timeoutSec: number, signal: AbortSignal): Promise<ExecResult> {
+  await ensureContainer(agent, dataDir);
+  const name = containerName(agent.id);
+  // Ending the docker CLI leaves the process running inside the container, so cancelling kills the container.
+  // The agent runs one job at a time, files stay on the host, and the next call starts it again.
+  const onAbort = () => { void run(['kill', name]); };
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    const r = await run(['exec', name, 'timeout', '-s', 'KILL', String(timeoutSec), 'sh', '-c', command], signal);
+    if (r.exitCode === 124 || r.exitCode === 137) r.stderr += `\n(stopped: over ${timeoutSec}s or out of memory)`;
+    return r;
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+    clearTimeout(idleTimers.get(agent.id));
+    idleTimers.set(agent.id, setTimeout(() => { void run(['stop', name]); }, IDLE_MS).unref());
+  }
+}
+
+export async function removeContainer(agentId: string): Promise<void> {
+  clearTimeout(idleTimers.get(agentId));
+  await run(['rm', '-f', containerName(agentId)]);
 }

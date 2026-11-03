@@ -1,8 +1,10 @@
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { listFiles, readFile, safePath, writeFile } from '../src/sandbox.ts';
+import { afterAll, describe, expect, it } from 'vitest';
+import { ensureContainer, listFiles, readFile, removeContainer, runInSandbox, safePath, workspaceDir, writeFile } from '../src/sandbox.ts';
+import type { Agent } from '../src/store.ts';
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), 'av-ws-'));
 
@@ -43,4 +45,43 @@ describe('workspace files', () => {
   it('refuses non-string content', async () => {
     await expect(writeFile(path.join(tmp(), 'nova'), 'a.txt', 42)).rejects.toThrow('content must be a string');
   });
+});
+
+const hasDocker = spawnSync('docker', ['version'], { stdio: 'ignore' }).status === 0;
+const testAgent = (network = false): Agent => ({
+  id: 'test-sbx', name: 'T', role: '', connection: 'x', model: 'x', systemPrompt: '', tools: [], maxSteps: 1,
+  avatar: { model: 'default.glb', color: '#888888' },
+  sandbox: { image: 'busybox:1.36', network },
+});
+const signal = () => new AbortController().signal;
+
+describe.skipIf(!hasDocker)('agent container', () => {
+  const dataDir = tmp();
+  afterAll(() => removeContainer('test-sbx'));
+
+  it('runs commands in /work and the files appear on the host', async () => {
+    const r = await runInSandbox(testAgent(), dataDir, 'echo hi > note.txt && cat note.txt', 30, signal());
+    expect(r).toMatchObject({ exitCode: 0, stdout: 'hi\n' });
+    expect(await readFile(workspaceDir(dataDir, 'test-sbx'), 'note.txt')).toBe('hi\n');
+  }, 120_000);
+
+  it('kills commands that run too long', async () => {
+    const r = await runInSandbox(testAgent(), dataDir, 'sleep 5', 1, signal());
+    expect([124, 137]).toContain(r.exitCode);
+  }, 60_000);
+
+  it('recreates the container when settings change and keeps files', async () => {
+    await ensureContainer(testAgent(true), dataDir);
+    const r = await runInSandbox(testAgent(true), dataDir, 'cat note.txt', 30, signal());
+    expect(r.stdout).toBe('hi\n');
+  }, 60_000);
+
+  it('cancel stops the running command', async () => {
+    const ac = new AbortController();
+    const started = Date.now();
+    const run = runInSandbox(testAgent(true), dataDir, 'sleep 30', 60, ac.signal);
+    setTimeout(() => ac.abort(), 1000);
+    await expect(run).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(15_000);
+  }, 60_000);
 });
