@@ -224,3 +224,4 @@ __marimo__/
 !lib/
 docs/
 .playwright-cli/
+.env
