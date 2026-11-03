@@ -1,29 +1,25 @@
 import { useEffect, useState } from 'react';
-import { Office, type AgentInfo } from './office/Office.tsx';
+import { api, type AgentDef } from './api.ts';
+import { Office } from './office/Office.tsx';
 import { LABEL, displayStatus } from './office/state.ts';
 import { useOffice } from './office/useOffice.ts';
+import { Panel } from './panel/Panel.tsx';
 
 export default function App() {
   const runId = new URLSearchParams(location.search).get('run');
   const state = useOffice(runId);
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [agents, setAgents] = useState<AgentDef[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    fetch('/api/agents')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(setAgents)
-      .catch(() => setError('서버에 연결할 수 없어요. server가 실행 중인지 확인하세요.'));
-  }, []);
-  useEffect(() => {
+    api<AgentDef[]>('/agents').then(setAgents).catch(() => setError('서버에 연결할 수 없어요. server가 실행 중인지 확인하세요.'));
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
   const current = agents.find((a) => a.id === selected);
-  const view = selected ? state.agents[selected] : undefined;
   return (
     <div className="app">
       <div className="stage">
@@ -41,14 +37,7 @@ export default function App() {
             </li>
           ))}
         </ul>
-        {current && (
-          <section>
-            <h3>{current.name}</h3>
-            <p>{current.role}</p>
-            <p>상태: {LABEL[displayStatus(view, now)]}{view?.tool ? ` (${view.tool})` : ''}</p>
-            {view?.runId && <p><a href={`?run=${view.runId}`}>이 실행 다시 보기</a></p>}
-          </section>
-        )}
+        {current && <Panel agent={current} view={state.agents[current.id]} now={now} />}
       </aside>
     </div>
   );
