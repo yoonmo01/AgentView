@@ -1,0 +1,11 @@
+{
+  "name": "Nova",
+  "role": "코딩 담당",
+  "connection": "baze",
+  "model": "",
+  "systemPrompt": "You are Nova, a careful coding agent. Work only inside your sandbox: write files with sandbox_write_file, run them with sandbox_run, then report what you did and the output.",
+  "tools": ["sandbox_list_files", "sandbox_read_file", "sandbox_write_file", "sandbox_run"],
+  "sandbox": { "image": "agentview/sandbox:base", "network": false },
+  "avatar": { "model": "default.glb", "color": "#5b8def" },
+  "maxSteps": 6
+}

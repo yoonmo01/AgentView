@@ -1,0 +1,3 @@
+[
+  { "id": "baze", "baseURL": "https://factchat-cloud.mindlogic.ai/v1/gateway", "apiKeyEnv": "BAZE_API_KEY", "defaultModel": "gpt-6-luna", "maxTokens": 1024 }
+]
