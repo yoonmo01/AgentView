@@ -18,7 +18,7 @@ app/
 - Node 22.18 이상, Docker Desktop
 - `cd app && npm install`
 - `docker build -t agentview/sandbox:base app/sandbox`
-- `cp app/data.example -r app/data` 후 필요하면 `app/data/models.json`의 `defaultModel` 수정 (기본 `gpt-6-luna`)
+- `cp -r app/data.example app/data` 후 필요하면 `app/data/models.json`의 `defaultModel` 수정 (기본 `gpt-6-luna`)
 - `cp .env.example .env` 후 `BAZE_API_KEY` 입력 (BAZE > API Gateway에서 발급)
 
 ## 실행 (`app/` 폴더에서)
