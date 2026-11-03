@@ -25,6 +25,16 @@ describe('tools', () => {
     expect(await runTool(agent, 'sandbox_read_file', '{"path":"/work/a.txt"}', sig(), e)).toBe('x');
   });
 
+  it('shares /team/<id> files between members and refuses other teams', async () => {
+    const e = env();
+    const writer = { ...agent, teams: ['dev'] };
+    const reader = { ...agent, id: 'milo', teams: ['dev'] };
+    await runTool(writer, 'sandbox_write_file', '{"path":"/team/dev/plan.md","content":"p"}', sig(), e);
+    expect(await runTool(reader, 'sandbox_read_file', '{"path":"/team/dev/plan.md"}', sig(), e)).toBe('p');
+    expect(await runTool(reader, 'sandbox_read_file', '{"path":"/team/ops/x"}', sig(), e)).toBe('ERROR: not a member of team ops');
+    expect(await runTool(agent, 'sandbox_read_file', '{"path":"/team/dev/plan.md"}', sig(), e)).toMatch('not a member');
+  });
+
   it('returns failures as ERROR text for the model', async () => {
     const e = env();
     expect(await runTool(agent, 'sandbox_list_files', '{}', sig(), e)).toMatch(/^ERROR: tool not allowed/);

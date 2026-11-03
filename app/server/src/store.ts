@@ -14,7 +14,23 @@ export type Agent = {
   sandbox: { image: string; network: boolean };
   avatar: { model: string; color: string };
   maxSteps: number;
+  /** Run-time only, never saved: teams the agent belongs to (shared folders are mounted from these). */
+  teams?: string[];
 };
+
+export type Pattern = 'supervisor' | 'parallel' | 'debate';
+export type Team = {
+  id: string;
+  name: string;
+  pattern: Pattern;
+  main: string;
+  /** Agent ids, or `team:<id>` for a nested team. */
+  members: string[];
+  limits: { maxDepth: number; maxCalls: number; timeoutSec: number; rounds: number };
+  /** Office room 1..ROOMS, assigned by the server; null when every room is taken. */
+  room: number | null;
+};
+export const ROOMS = 4;
 
 export type Connection = { id: string; baseURL: string; apiKeyEnv: string; defaultModel?: string; maxTokens?: number };
 
@@ -32,9 +48,28 @@ const DEFAULTS = {
 
 export const withDefaults = (raw: Partial<Agent>, id: string): Agent => ({ ...DEFAULTS, name: id, ...raw, id }) as Agent;
 
-function agentFile(dataDir: string, id: string): string {
-  if (!AGENT_ID.test(id)) throw new Error(`invalid agent id: ${id}`);
-  return path.join(dataDir, 'agents', `${id}.json`);
+type Kind = 'agents' | 'teams';
+function defFile(dataDir: string, kind: Kind, id: string): string {
+  if (!AGENT_ID.test(id)) throw new Error(`invalid ${kind.slice(0, -1)} id: ${id}`);
+  return path.join(dataDir, kind, `${id}.json`);
+}
+const agentFile = (dataDir: string, id: string) => defFile(dataDir, 'agents', id);
+
+async function listIds(dataDir: string, kind: Kind): Promise<string[]> {
+  const dir = path.join(dataDir, kind);
+  if (!existsSync(dir)) return [];
+  return (await readdir(dir))
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .filter((id) => AGENT_ID.test(id))
+    .sort();
+}
+
+async function writeDef(dataDir: string, kind: Kind, def: { id: string }): Promise<void> {
+  const { id, ...rest } = def; // the file name is the id
+  const file = defFile(dataDir, kind, id);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify(rest, null, 2) + '\n');
 }
 
 export const agentExists = (dataDir: string, id: string) => existsSync(agentFile(dataDir, id));
@@ -50,24 +85,71 @@ export function checkAgent(a: Agent, known: { connections: string[]; tools: stri
   return bad ? `unknown tool: ${bad}` : null;
 }
 
-export async function saveAgent(dataDir: string, agent: Agent): Promise<void> {
-  const { id, ...def } = agent; // the file name is the id
-  const file = agentFile(dataDir, id);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify(def, null, 2) + '\n');
+export const saveAgent = (dataDir: string, { teams: _runtimeOnly, ...agent }: Agent) => writeDef(dataDir, 'agents', agent);
+export const deleteAgent = (dataDir: string, id: string) => unlink(agentFile(dataDir, id));
+export const listAgents = async (dataDir: string) => Promise.all((await listIds(dataDir, 'agents')).map((id) => loadAgent(dataDir, id)));
+
+const TEAM_LIMITS = { maxDepth: 3, maxCalls: 50, timeoutSec: 600, rounds: 2 };
+
+export const teamWithDefaults = (raw: Partial<Team>, id: string): Team =>
+  ({ name: id, members: [], room: null, ...raw, limits: { ...TEAM_LIMITS, ...raw.limits }, id }) as Team;
+
+export const teamExists = (dataDir: string, id: string) => existsSync(defFile(dataDir, 'teams', id));
+export const loadTeam = async (dataDir: string, id: string) =>
+  teamWithDefaults(JSON.parse(await readFile(defFile(dataDir, 'teams', id), 'utf8')), id);
+export const listTeams = async (dataDir: string) => Promise.all((await listIds(dataDir, 'teams')).map((id) => loadTeam(dataDir, id)));
+export const saveTeam = (dataDir: string, team: Team) => writeDef(dataDir, 'teams', team);
+export const deleteTeam = (dataDir: string, id: string) => unlink(defFile(dataDir, 'teams', id));
+
+const nested = (member: string) => (member.startsWith('team:') ? member.slice('team:'.length) : null);
+
+/** Checks the request schema cannot express: references exist, main is not a member, nesting has no cycle. */
+export function checkTeam(t: Team, agents: Set<string>, teams: Map<string, Team>): string | null {
+  if (!agents.has(t.main)) return `unknown main agent: ${t.main}`;
+  if (t.members.includes(t.main)) return 'the main agent cannot also be a member';
+  const bad = t.members.find((m) => { const n = nested(m); return n ? !teams.has(n) && n !== t.id : !agents.has(m); });
+  if (bad) return `unknown member: ${bad}`;
+  const seen = new Set<string>();
+  const reaches = (id: string): boolean => {
+    if (id === t.id) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return (teams.get(id)?.members ?? []).some((m) => { const n = nested(m); return n !== null && reaches(n); });
+  };
+  return t.members.some((m) => { const n = nested(m); return n !== null && reaches(n); }) ? 'team nesting would form a cycle' : null;
 }
 
-export const deleteAgent = (dataDir: string, id: string) => unlink(agentFile(dataDir, id));
+/** Keep the team's room, else take the lowest free one, else none (members sit in the lobby). */
+export function assignRoom(t: Team, others: Team[]): number | null {
+  const own = others.find((o) => o.id === t.id)?.room;
+  if (own) return own;
+  const used = new Set(others.filter((o) => o.id !== t.id).map((o) => o.room));
+  for (let r = 1; r <= ROOMS; r++) if (!used.has(r)) return r;
+  return null;
+}
 
-export async function listAgents(dataDir: string): Promise<Agent[]> {
-  const dir = path.join(dataDir, 'agents');
-  if (!existsSync(dir)) return [];
-  const ids = (await readdir(dir))
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => f.slice(0, -'.json'.length))
-    .filter((id) => AGENT_ID.test(id))
-    .sort();
-  return Promise.all(ids.map((id) => loadAgent(dataDir, id)));
+export const teamsOf = (agentId: string, teams: Team[]) => teams.filter((t) => t.main === agentId || t.members.includes(agentId)).map((t) => t.id);
+
+export type Defs = { agents: Map<string, Agent>; teams: Map<string, Team> };
+
+/** Snapshot every definition a run needs (target plus nested members), so edits mid-run apply to the next run. */
+export async function resolve(dataDir: string, target: string): Promise<Defs> {
+  const all = await listTeams(dataDir);
+  const defs: Defs = { agents: new Map(), teams: new Map() };
+  const visit = async (name: string): Promise<void> => {
+    const n = nested(name);
+    if (n === null) {
+      if (!defs.agents.has(name)) defs.agents.set(name, { ...(await loadAgent(dataDir, name)), teams: teamsOf(name, all) });
+      return;
+    }
+    if (defs.teams.has(n)) return;
+    const team = await loadTeam(dataDir, n);
+    defs.teams.set(n, team);
+    await visit(team.main);
+    for (const m of team.members) await visit(m);
+  };
+  await visit(target.startsWith('agent:') ? target.slice('agent:'.length) : target);
+  return defs;
 }
 
 export async function loadConnections(dataDir: string): Promise<Connection[]> {

@@ -4,13 +4,13 @@ import { createBus, RUN_ID, type Ev } from './events.ts';
 import { startRun, type AgUiMessage, type Deps } from './runner.ts';
 import { listFiles, readFile, removeContainer, runInSandbox, workspaceDir } from './sandbox.ts';
 import {
-  AGENT_ID, agentExists, checkAgent, deleteAgent, listAgents, loadAgent, loadConnections, saveAgent, withDefaults,
-  type Agent, type ChatFn,
+  AGENT_ID, agentExists, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadConnections,
+  resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
 import { listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
 
 const ID = RUN_ID.source;
-const TARGET = '^agent:[a-z0-9][a-z0-9-]{0,40}$';
+const TARGET = '^(agent|team):[a-z0-9][a-z0-9-]{0,40}$';
 const RUN_TIMEOUT_MS = 600_000;
 const idParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', pattern: ID } } };
 const agentParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', pattern: AGENT_ID.source } } };
@@ -32,6 +32,25 @@ const AGENT_BODY = {
     avatar: { type: 'object', additionalProperties: false, required: ['model', 'color'], properties: {
       model: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,60}\\.glb$' }, color: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' } } },
     maxSteps: { type: 'integer', minimum: 1, maximum: 20 },
+  },
+};
+const TEAM_BODY = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'pattern', 'main', 'members'],
+  properties: {
+    id: { type: 'string', pattern: AGENT_ID.source },
+    name: { type: 'string', minLength: 1, maxLength: 60 },
+    pattern: { enum: ['supervisor', 'parallel', 'debate'] },
+    main: { type: 'string', pattern: AGENT_ID.source },
+    members: { type: 'array', minItems: 1, maxItems: 20, uniqueItems: true, items: { type: 'string', pattern: '^(team:)?[a-z0-9][a-z0-9-]{0,40}$' } },
+    limits: { type: 'object', additionalProperties: false, properties: {
+      maxDepth: { type: 'integer', minimum: 1, maximum: 5 },
+      maxCalls: { type: 'integer', minimum: 1, maximum: 200 },
+      timeoutSec: { type: 'integer', minimum: 10, maximum: 3600 },
+      rounds: { type: 'integer', minimum: 1, maximum: 5 },
+    } },
+    room: {}, // assigned by the server; any client value is ignored
   },
 };
 
@@ -81,6 +100,8 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
   app.delete('/agents/:id', { schema: { params: agentParams } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!agentExists(opts.dataDir, id)) return reply.code(404).send({ error: 'agent not found' });
+    const user = (await listTeams(opts.dataDir)).find((t) => t.main === id || t.members.includes(id));
+    if (user) return reply.code(409).send({ error: `used by team ${user.id}` });
     await deleteAgent(opts.dataDir, id);
     await (opts.removeSandbox ?? removeContainer)(id).catch(() => {}); // workspace files stay on the host
     return reply.code(204).send();
@@ -101,6 +122,39 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     } catch (e) {
       return reply.code((e as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 400).send({ error: (e as Error).message });
     }
+  });
+
+  app.get('/teams', async () => listTeams(opts.dataDir));
+
+  async function saveT(id: string, body: Partial<Team>, reply: FastifyReply, code: number) {
+    const teams = await listTeams(opts.dataDir);
+    const team = teamWithDefaults({ ...body, room: null }, id);
+    const error = checkTeam(team, new Set((await listAgents(opts.dataDir)).map((a) => a.id)), new Map(teams.map((t) => [t.id, t])));
+    if (error) return reply.code(400).send({ error });
+    team.room = assignRoom(team, teams);
+    await saveTeam(opts.dataDir, team);
+    return reply.code(code).send(team);
+  }
+
+  app.post('/teams', { schema: { body: { ...TEAM_BODY, required: ['id', ...TEAM_BODY.required] } } }, async (req, reply) => {
+    const body = req.body as Team;
+    if (teamExists(opts.dataDir, body.id)) return reply.code(409).send({ error: 'team already exists' });
+    return saveT(body.id, body, reply, 201);
+  });
+
+  app.put('/teams/:id', { schema: { params: agentParams, body: TEAM_BODY } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!teamExists(opts.dataDir, id)) return reply.code(404).send({ error: 'team not found' });
+    return saveT(id, req.body as Partial<Team>, reply, 200);
+  });
+
+  app.delete('/teams/:id', { schema: { params: agentParams } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!teamExists(opts.dataDir, id)) return reply.code(404).send({ error: 'team not found' });
+    const user = (await listTeams(opts.dataDir)).find((t) => t.members.includes(`team:${id}`));
+    if (user) return reply.code(409).send({ error: `used by team ${user.id}` });
+    await deleteTeam(opts.dataDir, id); // frees its room; the shared folder stays on the host
+    return reply.code(204).send();
   });
 
   app.get('/models', async () =>
@@ -124,14 +178,17 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
   }, async (req, reply) => {
     const body = req.body as { threadId: string; runId: string; messages: AgUiMessage[]; forwardedProps: { target: string } };
     if (bus.exists(body.runId)) return reply.code(409).send({ error: 'runId already used' });
-    const agent = await loadAgent(opts.dataDir, body.forwardedProps.target.slice('agent:'.length)).catch(() => null);
-    if (!agent) return reply.code(404).send({ error: 'agent not found' });
+    const target = body.forwardedProps.target;
+    const defs = await resolve(opts.dataDir, target).catch(() => null);
+    if (!defs) return reply.code(404).send({ error: `${target} not found, or one of its members is missing` });
+    const team = target.startsWith('team:') ? defs.teams.get(target.slice('team:'.length)) : undefined;
     const ac = new AbortController();
     running.set(body.runId, ac);
     const write = sse(reply);
     const off = bus.follow(body.runId, -1, (seq, e) => write(String(seq), e), () => reply.raw.end());
     reply.raw.on('close', off); // the run keeps going if the client disconnects
-    void startRun({ ...body, agent }, deps, (e) => bus.emit(body.runId, e), AbortSignal.any([ac.signal, AbortSignal.timeout(RUN_TIMEOUT_MS)]))
+    const timeout = AbortSignal.timeout(team ? team.limits.timeoutSec * 1000 : RUN_TIMEOUT_MS);
+    void startRun({ ...body, target, defs }, deps, (e) => bus.emit(body.runId, e), AbortSignal.any([ac.signal, timeout]))
       .finally(() => running.delete(body.runId));
   });
 

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ensureContainer, listFiles, readFile, removeContainer, runInSandbox, safePath, workspaceDir, writeFile } from '../src/sandbox.ts';
+import { ensureContainer, listFiles, readFile, removeContainer, runInSandbox, safePath, teamspaceDir, workspaceDir, writeFile } from '../src/sandbox.ts';
 import type { Agent } from '../src/store.ts';
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), 'av-ws-'));
@@ -74,6 +74,12 @@ describe.skipIf(!hasDocker)('agent container', () => {
     await ensureContainer(testAgent(true), dataDir);
     const r = await runInSandbox(testAgent(true), dataDir, 'cat note.txt', 30, signal());
     expect(r.stdout).toBe('hi\n');
+  }, 60_000);
+
+  it('mounts team shared folders when the agent joins a team', async () => {
+    const r = await runInSandbox({ ...testAgent(true), teams: ['t1'] }, dataDir, 'echo shared > /team/t1/s.txt && cat note.txt', 30, signal());
+    expect(r).toMatchObject({ exitCode: 0, stdout: 'hi\n' });
+    expect(await readFile(teamspaceDir(dataDir, 't1'), 's.txt')).toBe('shared\n');
   }, 60_000);
 
   it('cancel stops the running command', async () => {

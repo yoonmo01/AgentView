@@ -93,6 +93,30 @@ describe('http api', () => {
     expect((await send('PUT', '/agents/milo', milo)).status).toBe(404);
   });
 
+  it('saves teams with a server-assigned room and protects referenced definitions', async () => {
+    const url = await start();
+    const send = (method: string, p: string, payload?: unknown) => fetch(`${url}${p}`, {
+      method, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined,
+    });
+    await send('POST', '/agents', { id: 'atlas', name: 'Atlas', connection: 'c' });
+    const dev = { id: 'dev', name: '개발팀', pattern: 'supervisor', main: 'atlas', members: ['nova'], room: 4 };
+    const created = await send('POST', '/teams', dev);
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({ room: 1, limits: { maxCalls: 50, rounds: 2 } }); // client room ignored
+    expect((await send('POST', '/teams', { ...dev, id: 'bad', members: ['atlas'] })).status).toBe(400);
+    expect((await send('POST', '/teams', { ...dev, id: 'big', members: ['team:dev'] })).status).toBe(201);
+    expect((await send('PUT', '/teams/dev', { ...dev, members: ['team:big'] })).status).toBe(400); // cycle
+    expect((await send('DELETE', '/agents/nova')).status).toBe(409);
+    expect((await send('DELETE', '/teams/dev')).status).toBe(409); // big contains dev
+    expect((await (await fetch(`${url}/teams`)).json()).map((t: { id: string; room: number }) => [t.id, t.room])).toEqual([['big', 2], ['dev', 1]]);
+
+    const res = await post(url, body('team1', 'team:dev'));
+    const evs = sseEvents(await res.text());
+    expect(evs[1]).toMatchObject({ value: { target: 'team:dev', pattern: 'supervisor', main: 'atlas' } });
+    expect(evs.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'hello' });
+    expect((await post(url, body('team2', 'team:ghost'))).status).toBe(404);
+  });
+
   it('serves workspace files, models and tools', async () => {
     const url = await start();
     mkdirSync(path.join(dataDir, 'workspaces', 'nova', 'src'), { recursive: true });

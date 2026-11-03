@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventType } from '@ag-ui/core';
 import type { Ev } from './events.ts';
-import type { Agent, ChatFn, ChatMessage, ToolDef } from './store.ts';
+import type { Agent, ChatFn, ChatMessage, Defs, Team, ToolDef } from './store.ts';
 
 export type Emit = (e: Ev) => void;
 export type Deps = {
@@ -9,14 +9,27 @@ export type Deps = {
   toolDefs: (agent: Agent) => ToolDef[];
   runTool: (agent: Agent, name: string, args: string, signal: AbortSignal) => Promise<string>;
 };
-type Ctx = Deps & { emit: Emit; signal: AbortSignal; calls: { left: number } };
+type Ctx = Deps & {
+  emit: Emit;
+  signal: AbortSignal;
+  calls: { left: number }; // shared by every nested run
+  defs: Defs;
+  depth: number;
+  maxDepth: number;
+  subId?: string; // current subagentRunId; undefined for the run's main agent
+  held: Set<string>; // agents this run already holds, so nested re-entry does not wait on itself
+};
+/** A tool that exists only inside a pattern (delegate), run with the calling agent's ctx. */
+type Extra = { def: ToolDef; run: (args: Record<string, unknown>, toolCallId: string, ctx: Ctx) => Promise<string> };
 
 export type AgUiMessage = { role: string; content?: unknown; toolCalls?: ChatMessage['tool_calls']; toolCallId?: string };
 
-class LimitError extends Error {}
+export class LimitError extends Error {}
 
 // ponytail: non-text content parts are passed to the model as JSON text
 const asText = (c: unknown) => (typeof c === 'string' ? c : c == null ? '' : JSON.stringify(c));
+const say = (content: string): ChatMessage => ({ role: 'user', content });
+const note = (content: string): ChatMessage => ({ role: 'system', content });
 
 export function toChat(messages: AgUiMessage[]): ChatMessage[] {
   return messages.flatMap((m): ChatMessage[] => {
@@ -57,10 +70,10 @@ export async function withAgentLock<T>(agentId: string, onWait: () => void, fn: 
   }
 }
 
-async function callModel(agent: Agent, messages: ChatMessage[], ctx: Ctx): Promise<ChatMessage> {
+async function callModel(agent: Agent, messages: ChatMessage[], tools: ToolDef[], ctx: Ctx): Promise<ChatMessage> {
   ctx.signal.throwIfAborted();
   if (ctx.calls.left-- <= 0) throw new LimitError('maxCalls exceeded');
-  const stream = await ctx.chat({ connection: agent.connection, model: agent.model, messages, tools: ctx.toolDefs(agent) }, ctx.signal);
+  const stream = await ctx.chat({ connection: agent.connection, model: agent.model, messages, tools }, ctx.signal);
   const messageId = randomUUID();
   let text = '';
   const calls: { id: string; name: string; args: string }[] = [];
@@ -88,17 +101,29 @@ async function callModel(agent: Agent, messages: ChatMessage[], ctx: Ctx): Promi
   return { role: 'assistant', content: text || null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
 }
 
-async function runAgent(agent: Agent, input: ChatMessage[], ctx: Ctx): Promise<string> {
+async function runExtra(extra: Extra, rawArgs: string, toolCallId: string, ctx: Ctx): Promise<string> {
+  try {
+    return await extra.run(JSON.parse(rawArgs || '{}'), toolCallId, ctx);
+  } catch (e) {
+    if (ctx.signal.aborted || e instanceof LimitError) throw e;
+    return `ERROR: ${(e as Error).message}`; // e.g. the member failed: the caller decides what to do
+  }
+}
+
+async function runAgent(agent: Agent, input: ChatMessage[], ctx: Ctx, extra?: Extra): Promise<string> {
   const messages: ChatMessage[] = [{ role: 'system', content: agent.systemPrompt }, ...input];
+  const tools = [...ctx.toolDefs(agent), ...(extra ? [extra.def] : [])];
   for (let step = 0; step < agent.maxSteps; step++) {
-    const msg = await callModel(agent, messages, ctx);
+    const msg = await callModel(agent, messages, tools, ctx);
     messages.push(msg);
     if (!msg.tool_calls) return msg.content ?? '';
     const results = await Promise.all(msg.tool_calls.map(async (c) => {
       ctx.emit({ type: EventType.TOOL_CALL_START, toolCallId: c.id, toolCallName: c.function.name });
       ctx.emit({ type: EventType.TOOL_CALL_ARGS, toolCallId: c.id, delta: c.function.arguments });
       ctx.emit({ type: EventType.TOOL_CALL_END, toolCallId: c.id });
-      const content = await ctx.runTool(agent, c.function.name, c.function.arguments, ctx.signal);
+      const content = extra && c.function.name === extra.def.function.name
+        ? await runExtra(extra, c.function.arguments, c.id, ctx)
+        : await ctx.runTool(agent, c.function.name, c.function.arguments, ctx.signal);
       ctx.emit({ type: EventType.TOOL_CALL_RESULT, messageId: randomUUID(), toolCallId: c.id, content, role: 'tool' });
       return content;
     }));
@@ -107,26 +132,144 @@ async function runAgent(agent: Agent, input: ChatMessage[], ctx: Ctx): Promise<s
   throw new LimitError(`maxSteps (${agent.maxSteps}) exceeded`);
 }
 
+const teamOf = (name: string, ctx: Ctx): Team | undefined =>
+  name.startsWith('team:') ? ctx.defs.teams.get(name.slice('team:'.length)) : undefined;
+
+/** Every target has the same shape, so a team can be a member of another team. */
+async function run(name: string, input: ChatMessage[], ctx: Ctx, extra?: Extra): Promise<string> {
+  const team = teamOf(name, ctx);
+  if (team) return patterns[team.pattern](team, input, ctx);
+  const agent = ctx.defs.agents.get(name);
+  if (!agent) throw new Error(`unknown agent: ${name}`);
+  if (ctx.held.has(agent.id)) return runAgent(agent, input, ctx, extra);
+  return withAgentLock(
+    agent.id,
+    () => ctx.emit({ type: EventType.CUSTOM, name: 'agentview.queued', value: { agentId: agent.id } }),
+    async () => {
+      ctx.held.add(agent.id);
+      try {
+        return await runAgent(agent, input, ctx, extra);
+      } finally {
+        ctx.held.delete(agent.id);
+      }
+    },
+  );
+}
+
+/** Run a member as a subagent: its events carry its own subagentRunId; nested ones keep theirs. */
+async function runSub(name: string, input: ChatMessage[], ctx: Ctx, opts: { parentToolCallId?: string; extra?: Extra } = {}): Promise<string> {
+  if (ctx.depth >= ctx.maxDepth) throw new LimitError(`maxDepth (${ctx.maxDepth}) exceeded`);
+  const subagentRunId = randomUUID();
+  ctx.emit({
+    type: EventType.SUBAGENT_STARTED, subagentRunId, name,
+    ...(ctx.subId ? { parentSubagentRunId: ctx.subId } : {}),
+    ...(opts.parentToolCallId ? { parentToolCallId: opts.parentToolCallId } : {}),
+  });
+  const child: Ctx = { ...ctx, depth: ctx.depth + 1, subId: subagentRunId, emit: (e) => ctx.emit({ subagentRunId, ...e }) };
+  try {
+    const result = await run(name, input, child, opts.extra);
+    ctx.emit({ type: EventType.SUBAGENT_FINISHED, subagentRunId, result });
+    return result;
+  } catch (e) {
+    const code = ctx.signal.aborted ? 'cancelled' : e instanceof LimitError ? 'limit' : 'error';
+    ctx.emit({ type: EventType.SUBAGENT_ERROR, subagentRunId, message: (e as Error).message, code });
+    throw e;
+  }
+}
+
+const label = (m: string, ctx: Ctx) => {
+  const team = teamOf(m, ctx);
+  if (team) return `${team.name} (팀)`;
+  const a = ctx.defs.agents.get(m);
+  return a ? `${a.name}${a.role ? ` (${a.role})` : ''}` : m;
+};
+const folder = (team: Team) => note(`팀 공유 폴더: /team/${team.id} (팀원과 파일을 주고받을 때 사용)`);
+
+/** The team's main is the run's main agent at the top level, and its own subagent when the team is nested. */
+const runMain = (team: Team, input: ChatMessage[], ctx: Ctx, extra?: Extra) =>
+  ctx.subId === undefined ? run(team.main, input, ctx, extra) : runSub(team.main, input, ctx, { extra });
+
+async function supervisor(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
+  const delegate: Extra = {
+    def: {
+      type: 'function',
+      function: {
+        name: 'delegate',
+        description: `Give one team member a task and get their result back. Members:\n${team.members.map((m) => `- ${m}: ${label(m, ctx)}`).join('\n')}`,
+        parameters: {
+          type: 'object',
+          properties: {
+            member: { type: 'string', enum: team.members },
+            task: { type: 'string', description: 'A self-contained task. The member does not see this conversation.' },
+          },
+          required: ['member', 'task'],
+        },
+      },
+    },
+    run: (args, toolCallId, at) => {
+      const member = String(args.member);
+      if (!team.members.includes(member)) throw new Error(`not a member of ${team.id}: ${member}`);
+      return runSub(member, [folder(team), say(String(args.task ?? ''))], at, { parentToolCallId: toolCallId });
+    },
+  };
+  return runMain(team, [folder(team), ...input], ctx, delegate);
+}
+
+async function parallel(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
+  const results = await Promise.allSettled(team.members.map((m) =>
+    runSub(m, [folder(team), ...input, say(`당신의 역할: ${label(m, ctx)}. 위 요청에서 이 역할에 해당하는 부분을 맡아 처리하고 결과를 보고하세요.`)], ctx)));
+  const fatal = results.find((r): r is PromiseRejectedResult => r.status === 'rejected' && (ctx.signal.aborted || r.reason instanceof LimitError));
+  if (fatal) throw fatal.reason;
+  const report = results.map((r, i) =>
+    `[${label(team.members[i], ctx)}]\n${r.status === 'fulfilled' ? r.value : `(실패: ${(r.reason as Error).message})`}`).join('\n\n');
+  return runMain(team, [folder(team), ...input, say(`팀원 결과:\n\n${report}\n\n이 결과를 합쳐 최종 답을 쓰세요.`)], ctx);
+}
+
+async function debate(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
+  const said: string[] = [];
+  const rounds = team.limits.rounds;
+  for (let round = 1; round <= rounds; round++) {
+    for (const m of team.members) {
+      ctx.emit({ type: EventType.CUSTOM, name: 'agentview.debate_turn', value: { round, speaker: m } });
+      const r = await runSub(m, [...input, say(
+        `토론 ${round}/${rounds}라운드입니다. 지금까지의 발언:\n${said.join('\n\n') || '(아직 없음)'}\n\n` +
+        `당신(${label(m, ctx)}) 차례입니다. 앞선 의견을 참고해 짧게 말하세요.`)], ctx);
+      said.push(`[${label(m, ctx)}] ${r}`);
+    }
+  }
+  return runMain(team, [...input, say(`토론 기록:\n\n${said.join('\n\n')}\n\n사회자로서 결론을 정리하세요.`)], ctx);
+}
+
+const patterns: Record<Team['pattern'], (team: Team, input: ChatMessage[], ctx: Ctx) => Promise<string>> = { supervisor, parallel, debate };
+
+const pub = ({ id, name, role, avatar }: Agent) => ({ id, name, role, avatar });
+
 export async function startRun(
-  input: { threadId: string; runId: string; messages: AgUiMessage[]; agent: Agent; maxCalls?: number },
+  input: { threadId: string; runId: string; messages: AgUiMessage[]; target: string; defs: Defs; maxCalls?: number },
   deps: Deps,
   emit: Emit,
   signal: AbortSignal,
 ): Promise<void> {
-  const { threadId, runId, agent } = input;
+  const { threadId, runId, target, defs } = input;
+  const team = target.startsWith('team:') ? defs.teams.get(target.slice('team:'.length)) : undefined;
+  const main = team ? team.main : target.slice('agent:'.length);
   emit({ type: EventType.RUN_STARTED, threadId, runId });
   emit({
     type: EventType.CUSTOM,
     name: 'agentview.run_info',
-    value: { target: `agent:${agent.id}`, main: agent.id, agents: [{ id: agent.id, name: agent.name, role: agent.role, avatar: agent.avatar }] },
+    value: {
+      target, pattern: team?.pattern ?? 'single', main,
+      agents: [...defs.agents.values()].map(pub),
+      teams: [...defs.teams.values()].map(({ id, name, pattern, main, members, room }) => ({ id, name, pattern, main, members, room })),
+    },
   });
-  const ctx: Ctx = { ...deps, emit, signal, calls: { left: input.maxCalls ?? 20 } };
+  const ctx: Ctx = {
+    ...deps, emit, signal, defs, depth: 0, held: new Set(),
+    calls: { left: input.maxCalls ?? team?.limits.maxCalls ?? 20 },
+    maxDepth: team?.limits.maxDepth ?? 3,
+  };
   try {
-    const result = await withAgentLock(
-      agent.id,
-      () => emit({ type: EventType.CUSTOM, name: 'agentview.queued', value: { agentId: agent.id } }),
-      () => runAgent(agent, toChat(input.messages), ctx),
-    );
+    const result = await run(team ? target : main, toChat(input.messages), ctx);
     emit({ type: EventType.RUN_FINISHED, threadId, runId, result });
   } catch (e) {
     const timedOut = signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError';
