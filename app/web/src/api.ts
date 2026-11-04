@@ -14,6 +14,23 @@ export type AgentDef = {
 export type ModelConn = { id: string; baseURL: string; defaultModel?: string; maxTokens?: number };
 export type ToolInfo = { name: string; description: string };
 
+/** Read an SSE response body (POST /agui answers with one; EventSource can only GET). */
+export async function readSse(res: Response, onEvent: (e: { type: string; [key: string]: any }) => void): Promise<void> {
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buf += value;
+    let end;
+    while ((end = buf.indexOf('\n\n')) >= 0) {
+      const data = buf.slice(0, end).split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('\n');
+      buf = buf.slice(end + 2);
+      if (data) onEvent(JSON.parse(data));
+    }
+  }
+}
+
 /** JSON call to the server through the Vite /api proxy. Throws with the server's message on failure. */
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {

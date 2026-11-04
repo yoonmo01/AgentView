@@ -41,7 +41,20 @@ small { color: #777; }
 .primary { background: #f0b400; border: 0; border-radius: 8px; padding: 8px 14px; }
 .danger { background: #fff; border: 1px solid #e04848; color: #b00; border-radius: 8px; padding: 8px 14px; }
 
+.chat-page { display: grid; grid-template-columns: minmax(320px, 440px) 1fr; flex: 1; min-height: 0; }
+.chat { display: grid; grid-template-rows: auto 1fr auto; gap: 8px; padding: 12px; background: #fff; border-right: 1px solid #ddd; min-height: 0; }
+.chat label { display: grid; gap: 4px; font-size: 14px; }
+.chat select, .composer textarea { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
+.messages { list-style: none; margin: 0; padding: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.msg { padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; max-width: 90%; }
+.msg-user { align-self: flex-end; background: #fff3c4; }
+.msg-assistant { align-self: flex-start; background: #f1f1f1; }
+.msg .tools { font-size: 12px; color: #666; margin-bottom: 4px; }
+.composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+
 @media (max-width: 700px) {
+  .chat-page { grid-template-columns: 1fr; grid-template-rows: 1fr 35vh; }
+  .chat { border-right: 0; }
   .app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .side { border-left: 0; border-top: 1px solid #ddd; max-height: 45vh; }
   .admin { grid-template-columns: 1fr; padding: 12px 16px; }
