@@ -29,8 +29,12 @@ export type Team = {
   limits: { maxDepth: number; maxCalls: number; timeoutSec: number; rounds: number };
   /** Office room 1..ROOMS, assigned by the server; null when every room is taken. */
   room: number | null;
+  /** Team color (#rrggbb) for its room, label and members; picked by the server when not given. */
+  color: string;
 };
 export const ROOMS = 4;
+/** Team colors that do not look like a status color (green, orange, yellow, blue, red). */
+export const TEAM_COLORS = ['#8a5cd6', '#1aa3a3', '#d6589c', '#3f51b5', '#9c6b3f', '#7a8f2a', '#5d6d7e', '#6d4c8f'];
 
 export type Connection = { id: string; baseURL: string; apiKeyEnv: string; defaultModel?: string; maxTokens?: number };
 
@@ -92,12 +96,16 @@ export const listAgents = async (dataDir: string) => Promise.all((await listIds(
 const TEAM_LIMITS = { maxDepth: 3, maxCalls: 50, timeoutSec: 600, rounds: 2 };
 
 export const teamWithDefaults = (raw: Partial<Team>, id: string): Team =>
-  ({ name: id, members: [], room: null, ...raw, limits: { ...TEAM_LIMITS, ...raw.limits }, id }) as Team;
+  ({ name: id, members: [], room: null, color: '', ...raw, limits: { ...TEAM_LIMITS, ...raw.limits }, id }) as Team;
 
 export const teamExists = (dataDir: string, id: string) => existsSync(defFile(dataDir, 'teams', id));
 export const loadTeam = async (dataDir: string, id: string) =>
   teamWithDefaults(JSON.parse(await readFile(defFile(dataDir, 'teams', id), 'utf8')), id);
-export const listTeams = async (dataDir: string) => Promise.all((await listIds(dataDir, 'teams')).map((id) => loadTeam(dataDir, id)));
+export async function listTeams(dataDir: string) {
+  const teams = await Promise.all((await listIds(dataDir, 'teams')).map((id) => loadTeam(dataDir, id)));
+  for (const t of teams) if (!t.color) t.color = assignColor(t, teams); // teams saved before colors existed
+  return teams;
+}
 export const saveTeam = (dataDir: string, team: Team) => writeDef(dataDir, 'teams', team);
 export const deleteTeam = (dataDir: string, id: string) => unlink(defFile(dataDir, 'teams', id));
 
@@ -126,6 +134,15 @@ export function assignRoom(t: Team, others: Team[]): number | null {
   const used = new Set(others.filter((o) => o.id !== t.id).map((o) => o.room));
   for (let r = 1; r <= ROOMS; r++) if (!used.has(r)) return r;
   return null;
+}
+
+/** The color given, else the team's previous one, else the first color no other team uses. */
+export function assignColor(t: Team, others: Team[]): string {
+  if (t.color) return t.color;
+  const own = others.find((o) => o.id === t.id)?.color;
+  if (own) return own;
+  const used = new Set(others.map((o) => o.color));
+  return TEAM_COLORS.find((c) => !used.has(c)) ?? TEAM_COLORS[others.length % TEAM_COLORS.length];
 }
 
 export const teamsOf = (agentId: string, teams: Team[]) => teams.filter((t) => t.main === agentId || t.members.includes(agentId)).map((t) => t.id);

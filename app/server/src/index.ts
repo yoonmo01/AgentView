@@ -6,7 +6,7 @@ import { createMcp, MCP_NAME, parseConfig, type Mcp, type McpConfig } from './mc
 import { startRun, type AgUiMessage, type Deps } from './runner.ts';
 import { listFiles, readFile, removeContainer, runInSandbox, workspaceDir } from './sandbox.ts';
 import {
-  AGENT_ID, agentExists, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadConnections,
+  AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadConnections,
   resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
 import { listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
@@ -53,6 +53,7 @@ const TEAM_BODY = {
       rounds: { type: 'integer', minimum: 1, maximum: 5 },
     } },
     room: {}, // assigned by the server; any client value is ignored
+    color: { type: 'string', pattern: '^(#[0-9a-f]{6})?$' },
   },
 };
 
@@ -149,6 +150,7 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     const error = checkTeam(team, new Set((await listAgents(opts.dataDir)).map((a) => a.id)), new Map(teams.map((t) => [t.id, t])));
     if (error) return reply.code(400).send({ error });
     team.room = assignRoom(team, teams);
+    team.color = assignColor(team, teams);
     await saveTeam(opts.dataDir, team);
     return reply.code(code).send(team);
   }
@@ -279,10 +281,12 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     const ac = new AbortController();
     running.set(body.runId, ac);
     const write = sse(reply);
-    const off = bus.follow(body.runId, -1, (seq, e) => write(String(seq), e), () => reply.raw.end());
+    // close the stream only after the outcome is saved, so a client reloading the session right away sees it
+    let saved: Promise<unknown> = Promise.resolve();
+    const off = bus.follow(body.runId, -1, (seq, e) => write(String(seq), e), () => void saved.then(() => reply.raw.end()));
     reply.raw.on('close', off); // the run keeps going if the client disconnects
     const timeout = AbortSignal.timeout(team ? team.limits.timeoutSec * 1000 : RUN_TIMEOUT_MS);
-    void startRun({ ...body, target, defs }, deps, (e) => bus.emit(body.runId, e), AbortSignal.any([ac.signal, timeout]))
+    saved = startRun({ ...body, target, defs }, deps, (e) => bus.emit(body.runId, e), AbortSignal.any([ac.signal, timeout]))
       .then(async () => {
         if (!db) return;
         const evs = bus.history(body.runId);

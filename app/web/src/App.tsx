@@ -33,10 +33,11 @@ export default function App() {
   const pick = (t: string) => { setTarget(t); setSettings(null); };
   const openSettings = (s: typeof settings) => { setSettings(s); if (s) setChatOpen(false); };
   const selected = target?.startsWith('agent:') ? target.slice('agent:'.length) : null;
+  const selectedTeam = target?.startsWith('team:') ? target.slice('team:'.length) : null;
 
   return (
     <div className="screen">
-      <Office agents={agents} teams={teams} state={state} now={now} selected={selected}
+      <Office agents={agents} teams={teams} state={state} now={now} selected={selected} selectedTeam={selectedTeam}
         onSelect={(id) => id && pick(`agent:${id}`)} onSelectTeam={(id) => pick(`team:${id}`)} />
       <Roster agents={agents} teams={teams} state={state} now={now} target={target} onPick={pick} />
       <button className="settings-btn" onClick={() => openSettings(settings ? null : { tab: 'agents' })} aria-expanded={!!settings}>⚙ 설정</button>

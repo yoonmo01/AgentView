@@ -1,6 +1,6 @@
 import { useGLTF } from '@react-three/drei';
 import { Component, Suspense, useMemo, type ReactNode } from 'react';
-import { Box3, Vector3, type Mesh } from 'three';
+import { Box3, Color, Vector3, type Mesh } from 'three';
 import type { TeamDef } from '../api.ts';
 import { center, DESK_CHAIR, DESK_SIZE, FLOOR, LOBBY, LOUNGE, MEETING, PROPS, ROOMS, TALL, teamRoom, WALL_T, WALLS, type Rect, type Vec2 } from './layout.ts';
 
@@ -73,14 +73,17 @@ function Floor({ r, color }: { r: Rect; color: string }) {
 
 /** Everything that does not move: floors, walls and the shared rooms' furniture. */
 export function Building({ teams }: { teams: TeamDef[] }) {
-  const used = new Set(teams.map((t) => t.room));
+  const tint = (room: number) => {
+    const t = teams.find((x) => x.room === room);
+    return t ? `#${new Color('#ece4d4').lerp(new Color(t.color || '#c9a96e'), 0.22).getHexString()}` : '#e4ddd0';
+  };
   return (
     <group>
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <planeGeometry args={[FLOOR.x1 - FLOOR.x0 + 2, FLOOR.z1 - FLOOR.z0 + 2]} />
         <meshStandardMaterial color="#d8d2c4" />
       </mesh>
-      {Array.from({ length: ROOMS }, (_, i) => <Floor key={i} r={teamRoom(i + 1)} color={used.has(i + 1) ? '#e9d9bd' : '#e4ddd0'} />)}
+      {Array.from({ length: ROOMS }, (_, i) => <Floor key={i} r={teamRoom(i + 1)} color={tint(i + 1)} />)}
       <Floor r={LOBBY} color="#ece6da" />
       <Floor r={MEETING} color="#d9e1ea" />
       <Floor r={LOUNGE} color="#eadccd" />

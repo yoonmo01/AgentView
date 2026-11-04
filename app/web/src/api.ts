@@ -20,6 +20,8 @@ export type TeamDef = {
   members: string[];
   limits: { maxDepth: number; maxCalls: number; timeoutSec: number; rounds: number };
   room: number | null;
+  /** #rrggbb; empty asks the server to pick one. */
+  color: string;
 };
 export const PATTERN_LABEL: Record<TeamDef['pattern'], string> = { supervisor: '메인-하위', parallel: '병렬 분담', debate: '토론' };
 export type ModelConn ={ id: string; baseURL: string; defaultModel?: string; maxTokens?: number };

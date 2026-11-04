@@ -1,8 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, PATTERN_LABEL, type AgentDef, type TeamDef } from '../api.ts';
+import { TeamMark } from '../shell/ui.tsx';
+
+/** Same palette as the server's TEAM_COLORS: none of them looks like a status color. */
+const TEAM_COLORS = ['#8a5cd6', '#1aa3a3', '#d6589c', '#3f51b5', '#9c6b3f', '#7a8f2a', '#5d6d7e', '#6d4c8f'];
 
 const EMPTY: TeamDef = {
-  id: '', name: '', pattern: 'supervisor', main: '', members: [], room: null,
+  id: '', name: '', pattern: 'supervisor', main: '', members: [], room: null, color: '',
   limits: { maxDepth: 3, maxCalls: 50, timeoutSec: 600, rounds: 2 },
 };
 const HELP: Record<TeamDef['pattern'], string> = {
@@ -64,7 +68,7 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
           {teams.map((t) => (
             <li key={t.id}>
               <button aria-pressed={form?.id === t.id && !isNew} onClick={() => open(t)}>
-                <span className="square" /><span className="row-text"><b>{t.name}</b><small>{PATTERN_LABEL[t.pattern]} · {t.room ? `${t.room}번 방` : '로비'}</small></span>
+                <TeamMark team={t} /><span className="row-text"><b>{t.name}</b><small>{PATTERN_LABEL[t.pattern]} · {t.room ? `${t.room}번 방` : '로비'}</small></span>
               </button>
             </li>
           ))}
@@ -81,6 +85,13 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
               <input required pattern="[a-z0-9][a-z0-9\-]{0,40}" value={form.id} disabled={!isNew} onChange={(e) => set({ id: e.target.value })} />
             </label>
             <label>이름<input required maxLength={60} value={form.name} onChange={(e) => set({ name: e.target.value })} /></label>
+            <fieldset className="swatches">
+              <legend>팀 색 {!form.color && <small>(저장하면 다른 팀과 겹치지 않는 색이 정해져요)</small>}</legend>
+              {TEAM_COLORS.map((c) => (
+                <button key={c} type="button" className="swatch" style={{ background: c }} aria-pressed={form.color === c}
+                  aria-label={`색 ${c}`} onClick={() => set({ color: c })} />
+              ))}
+            </fieldset>
             <label>구조
               <select value={form.pattern} onChange={(e) => set({ pattern: e.target.value as TeamDef['pattern'] })}>
                 {Object.entries(PATTERN_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
