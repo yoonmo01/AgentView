@@ -60,16 +60,16 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
     <div className="admin">
       <aside>
         <h2>팀</h2>
-        <ul className="list">
+        <ul className="rows">
           {teams.map((t) => (
             <li key={t.id}>
               <button aria-pressed={form?.id === t.id && !isNew} onClick={() => open(t)}>
-                {t.name} <small>{PATTERN_LABEL[t.pattern]} · {t.room ? `${t.room}번 방` : '로비'}</small>
+                <span className="square" /><span className="row-text"><b>{t.name}</b><small>{PATTERN_LABEL[t.pattern]} · {t.room ? `${t.room}번 방` : '로비'}</small></span>
               </button>
             </li>
           ))}
         </ul>
-        <button className="primary" onClick={() => open(null)} disabled={!agents.length}>+ 새 팀</button>
+        <button className="add" onClick={() => open(null)} disabled={!agents.length}>+ 새 팀</button>
       </aside>
 
       <section>

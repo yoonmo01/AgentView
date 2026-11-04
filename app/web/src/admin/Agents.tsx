@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AgentDef, type ModelConn, type ToolInfo } from '../api.ts';
+import { Avatar } from '../shell/ui.tsx';
 
 const EMPTY: AgentDef = {
   id: '', name: '', role: '', connection: '', model: '', systemPrompt: '', tools: [], maxSteps: 6,
@@ -53,17 +54,17 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
     <div className="admin">
       <aside>
         <h2>에이전트</h2>
-        <ul className="list">
+        <ul className="rows">
           {agents.map((a) => (
             <li key={a.id}>
               <button aria-pressed={form?.id === a.id && !isNew} onClick={() => open(a)}>
-                <span className="dot" style={{ background: a.avatar.color }} /> {a.name} <small>{a.role}</small>
+                <Avatar agent={a} /><span className="row-text"><b>{a.name}</b><small>{a.role}</small></span>
               </button>
             </li>
           ))}
         </ul>
-        <button className="primary" onClick={() => open(null)}>+ 새 에이전트</button>
-        <h2>모델 연결</h2>
+        <button className="add" onClick={() => open(null)}>+ 새 에이전트</button>
+        <h2 className="sub">모델 연결</h2>
         <ul className="plain">
           {models.map((m) => <li key={m.id}><b>{m.id}</b> · {m.defaultModel ?? '모델 미지정'}<br /><small>{m.baseURL}</small></li>)}
         </ul>

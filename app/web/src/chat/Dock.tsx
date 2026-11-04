@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { summarizeRun } from '../../../server/src/summary.ts';
 import { api, PATTERN_LABEL, readSse, type AgentDef, type ModelConn, type Session, type SessionMessage, type Step, type TeamDef } from '../api.ts';
-import { COLOR, describeTool, LABEL, displayStatus, type AgUiEvent, type OfficeState } from '../office/state.ts';
+import { describeTool, displayStatus, type AgUiEvent, type OfficeState } from '../office/state.ts';
+import { Avatar, Chip } from '../shell/ui.tsx';
 import { dayGroup, shortTime } from './dates.ts';
 import { Files } from './Files.tsx';
 
@@ -164,8 +165,8 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
       <section className="dock collapsed" aria-label="채팅">
         {target && (
           <button className="dock-who" onClick={() => onExpand(true)} title="대화 펼치기">
-            {team ? <span className="square" /> : <span className="dot" style={{ background: COLOR[status] }} />} {name}
-            {live && <small> 작업 중…</small>} <span aria-hidden>▴</span>
+            {team ? <span className="square" /> : agent && <Avatar agent={agent} />} {name}
+            {agent && !team && <Chip status={status} />} <span aria-hidden>▴</span>
           </button>
         )}
         {composer}
@@ -177,7 +178,7 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
   return (
     <section className="dock open" aria-label={`${name} 채팅`}>
       <aside className="sessions">
-        <button className="primary" onClick={() => { setSessionId(null); setLines([]); setView('chat'); }} disabled={!target || !!live}>+ 새 대화</button>
+        <button className="add" onClick={() => { setSessionId(null); setLines([]); setView('chat'); }} disabled={!target || !!live}>+ 새 대화</button>
         {dbOff && <p className="muted small">DB가 꺼져 있어 대화가 저장되지 않아요 (npm run db).</p>}
         <ul>
           {sessions.map((s) => {
@@ -199,8 +200,9 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
       </aside>
       <div className="conversation">
         <header>
-          {team ? <span className="square" /> : <span className="dot" style={{ background: COLOR[status] }} />}
-          <div className="who"><b>{name}</b><small>{team ? `${PATTERN_LABEL[team.pattern]} 팀` : `${agent?.role || ''} · ${LABEL[status]}`}</small></div>
+          {team ? <span className="square" /> : agent && <Avatar agent={agent} />}
+          <div className="who"><b>{name}</b><small>{team ? `${PATTERN_LABEL[team.pattern]} 팀` : agent?.role}</small></div>
+          {agent && !team && <Chip status={status} />}
           {agent && !team && (
             <div className="tabs">
               <button aria-selected={view === 'chat'} onClick={() => setView('chat')}>대화</button>

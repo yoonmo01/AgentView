@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { api } from '../api.ts';
 
 type McpServer = {
@@ -9,6 +9,7 @@ type McpServer = {
   tools: { name: string; description: string }[];
 };
 const STATUS: Record<McpServer['status'], string> = { connecting: '연결 중', connected: '연결됨', failed: '실패', auth: '인증 필요' };
+const STATUS_COLOR: Record<McpServer['status'], string> = { connecting: '#d9a400', connected: '#2f9a62', failed: '#d64545', auth: '#e8862a' };
 type Mode = 'url' | 'command' | 'json';
 const EXAMPLE = '{\n  "mcpServers": {\n    "everything": { "command": "mcp-server-everything", "args": ["stdio"] }\n  }\n}';
 
@@ -22,8 +23,8 @@ export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
   const fail = (e: unknown) => setMsg({ text: (e as Error).message, error: true });
-  const reload = () => api<McpServer[]>('/mcp').then(setServers);
-  useEffect(() => { reload().catch(fail); }, []);
+  const reload = () => api<McpServer[]>('/mcp').then((l) => { setServers(l); return l; });
+  useEffect(() => { reload().then((l) => setPicked((p) => p ?? l[0]?.name ?? null)).catch(fail); }, []);
   const current = servers.find((s) => s.name === picked);
 
   async function add(e: FormEvent) {
@@ -63,17 +64,18 @@ export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
     <div className="admin">
       <aside>
         <h2>MCP 서버</h2>
-        <ul className="list">
+        <ul className="rows">
           {servers.map((s) => (
             <li key={s.name}>
               <button aria-pressed={picked === s.name && !adding} onClick={() => { setPicked(s.name); setAdding(false); setMsg(null); }}>
-                <span className={`dot st-${s.status}`} /> {s.name} <small>{STATUS[s.status]} · 도구 {s.tools.length}개</small>
+                <span className="row-text"><b>{s.name}</b><small>도구 {s.tools.length}개</small></span>
+                <span className="chip" style={{ '--c': STATUS_COLOR[s.status] } as CSSProperties}>{STATUS[s.status]}</span>
               </button>
             </li>
           ))}
         </ul>
-        <button className="primary" onClick={() => { setAdding(true); setMsg(null); }}>+ 서버 추가</button>
-        <small>추가하면 바로 연결돼요. 서버를 재시작할 필요가 없어요. 에이전트가 쓰려면 에이전트 탭에서 도구를 허용하세요.</small>
+        <button className="add" onClick={() => { setAdding(true); setMsg(null); }}>+ 서버 추가</button>
+        <small className="hint">추가하면 바로 연결돼요. 서버를 재시작할 필요가 없어요. 에이전트가 쓰려면 에이전트 탭에서 도구를 허용하세요.</small>
       </aside>
 
       <section>
@@ -115,11 +117,21 @@ export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
           </form>
         ) : !current ? <p>왼쪽에서 서버를 고르거나 새로 추가하세요.</p> : (
           <div className="form">
-            <h2>{current.name} <small>{STATUS[current.status]}</small></h2>
+            <h2>{current.name} <span className="chip" style={{ '--c': STATUS_COLOR[current.status] } as CSSProperties}>{STATUS[current.status]}</span></h2>
             {current.error && <p className="error">{current.error}</p>}
-            <pre className="mono box">{JSON.stringify(current.config, null, 2)}</pre>
-            <h3>도구 {current.tools.length}개</h3>
-            <ul className="plain">{current.tools.map((t) => <li key={t.name}><code>{t.name}</code><br /><small>{t.description}</small></li>)}</ul>
+            <dl className="facts">
+              {current.config.url ? <><dt>주소</dt><dd className="mono">{current.config.url}</dd></> : <>
+                <dt>실행</dt><dd className="mono">{[current.config.command, ...(current.config.args ?? [])].join(' ')}</dd>
+                <dt>인터넷</dt><dd>{current.config.network ? '허용' : '막힘 (샌드박스 컨테이너)'}</dd>
+                <dt>환경 변수</dt><dd>{Object.keys(current.config.env ?? {}).join(', ') || '없음'}</dd>
+              </>}
+            </dl>
+            <h3 className="sub">도구 {current.tools.length}개 <small>에이전트 탭에서 허용하면 쓸 수 있어요</small></h3>
+            <ul className="tool-list">
+              {current.tools.map((t) => (
+                <li key={t.name} title={t.description}><code>{t.name.slice(`mcp__${current.name}__`.length) || t.name}</code><small>{t.description}</small></li>
+              ))}
+            </ul>
             <div className="actions">
               <button type="button" onClick={() => act('reconnect')} disabled={busy}>다시 연결</button>
               <button type="button" className="danger" onClick={() => act('delete')} disabled={busy}>삭제</button>

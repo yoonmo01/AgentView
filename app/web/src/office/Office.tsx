@@ -7,6 +7,7 @@ import { Character, placeLabel, type Mode } from './Character.tsx';
 import { Building, DeskSet } from './Furniture.tsx';
 import { center, FLOOR, LOBBY, LOBBY_DESKS, LOUNGE, MEETING, meetingSeat, placeAgents, ROOMS, roomDesks, SEAT, TALL, teamRoom } from './layout.ts';
 import { buildGrid } from './nav.ts';
+import { Chip } from '../shell/ui.tsx';
 import { COLOR, LABEL, displayStatus, type OfficeState } from './state.ts';
 
 const MAX_LINKS = 64;
@@ -125,8 +126,7 @@ export function Office({ agents, teams, state, now, selected, onSelect, onSelect
           <div key={a.id} className="agent-label" ref={ref(a.id)}>
             {say && <div className="bubble" style={{ borderColor: COLOR[s] }}>{say}</div>}
             <div className={`tag${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}>
-              <span className="dot" style={{ background: COLOR[s] }} aria-hidden /> {a.name}
-              {s !== 'idle' && <small> {LABEL[s]}</small>}
+              {a.name} <Chip status={s} />
             </div>
           </div>
         );
