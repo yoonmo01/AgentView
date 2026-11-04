@@ -1,4 +1,4 @@
-import { DESK_SIZE, FLOOR, PROPS, WALL_T, WALLS, type Prop, type Vec2 } from './layout.ts';
+import { DESK_CHAIR, DESK_SIZE, FLOOR, PROPS, WALL_T, WALLS, type Prop, type Vec2 } from './layout.ts';
 
 const CELL = 0.25;
 const RADIUS = 0.22; // character half-width: obstacles grow by this much
@@ -22,12 +22,16 @@ const cellOf = (p: Vec2): [number, number] => [
 ];
 const centerOf = (i: number, j: number): Vec2 => ({ x: FLOOR.x0 + (i + 0.5) * CELL, z: FLOOR.z0 + (j + 0.5) * CELL });
 
-/** Walkable cells: walls, desks and solid furniture (grown by the character radius) are blocked. */
+/** Walkable cells: walls, desks, chairs and solid furniture (grown by the character radius) are blocked. */
 export function buildGrid(desks: Vec2[]): Grid {
   const boxes: Box[] = [
     ...WALLS.map(([x0, z0, x1, z1]) => ({ x0: Math.min(x0, x1) - WALL_T / 2, z0: Math.min(z0, z1) - WALL_T / 2, x1: Math.max(x0, x1) + WALL_T / 2, z1: Math.max(z0, z1) + WALL_T / 2 })),
     ...PROPS.filter((p) => p.solid !== false).map(footprint),
     ...desks.map((d) => ({ x0: d.x - DESK_SIZE.w / 2, z0: d.z - DESK_SIZE.d / 2, x1: d.x + DESK_SIZE.w / 2, z1: d.z + DESK_SIZE.d / 2 })),
+    ...desks.map((d) => {
+      const h = DESK_CHAIR.size / 2, cz = d.z + DESK_CHAIR.z;
+      return { x0: d.x - h, z0: cz - h, x1: d.x + h, z1: cz + h };
+    }),
   ];
   const blocked = new Uint8Array(COLS * ROWS);
   for (let j = 0; j < ROWS; j++) {
@@ -62,18 +66,22 @@ function nearestFree(g: Grid, [i0, j0]: [number, number]): [number, number] {
 
 /** True when the straight segment a→b crosses only walkable cells. */
 function sees(g: Grid, a: Vec2, b: Vec2): boolean {
-  const steps = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / (CELL / 2));
+  const steps = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / (CELL / 6)); // fine enough not to skip a corner cell
   for (let s = 1; s < steps; s++) {
     if (!isFree(g, { x: a.x + ((b.x - a.x) * s) / steps, z: a.z + ((b.z - a.z) * s) / steps })) return false;
   }
   return true;
 }
 
-/** A* over the grid, then shortened to the corners that matter. Returns waypoints after `from`, ending at `to`. */
+/**
+ * A* over the grid, then shortened to the corners that matter. Returns waypoints after `from`, ending at `to`.
+ * A blocked `to` (a seat on a chair) is reached by walking to the nearest free cell, then one short step in.
+ */
 export function findPath(g: Grid, from: Vec2, to: Vec2): Vec2[] {
   const [si, sj] = nearestFree(g, cellOf(from));
   const [gi, gj] = nearestFree(g, cellOf(to));
-  const end = isFree(g, to) ? to : centerOf(gi, gj);
+  const end = centerOf(gi, gj);
+  const finish = (pts: Vec2[]) => (isFree(g, to) ? [...pts.slice(0, -1), to] : [...pts, to]);
   const start = sj * COLS + si, goal = gj * COLS + gi;
   const cost = new Float32Array(COLS * ROWS).fill(Infinity);
   const prev = new Int32Array(COLS * ROWS).fill(-1);
@@ -94,7 +102,7 @@ export function findPath(g: Grid, from: Vec2, to: Vec2): Vec2[] {
       if (c < cost[nk]) { cost[nk] = c; prev[nk] = k; open.add(nk); }
     }
   }
-  if (prev[goal] === -1 && goal !== start) return [end]; // unreachable: walk straight rather than freeze
+  if (prev[goal] === -1 && goal !== start) return [to]; // unreachable: walk straight rather than freeze
   const cells: Vec2[] = [];
   for (let k = goal; k !== start && k !== -1; k = prev[k]) cells.unshift(centerOf(k % COLS, Math.floor(k / COLS)));
   cells.push(end);
@@ -103,5 +111,5 @@ export function findPath(g: Grid, from: Vec2, to: Vec2): Vec2[] {
   for (let n = 0; n < cells.length; n++) {
     if (n === cells.length - 1 || !sees(g, at, cells[n + 1])) { out.push(cells[n]); at = cells[n]; }
   }
-  return out;
+  return finish(out);
 }
