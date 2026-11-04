@@ -1,10 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AgentDef, type ModelConn, type ToolInfo } from '../api.ts';
 import { Avatar } from '../shell/ui.tsx';
+import { ask } from '../shell/ask.ts';
+
+/** Soft character colors; none is neon, and the last swatch opens a free color picker. */
+const AVATAR_COLORS = ['#e8805a', '#f2a65a', '#e9c46a', '#8cc084', '#4fb3a9', '#5b9bd5', '#6c7fd8', '#a084dc', '#e07ba0', '#c97b63', '#7d8597', '#3d5a80'];
 
 const EMPTY: AgentDef = {
   id: '', name: '', role: '', connection: '', model: '', systemPrompt: '', tools: [], maxSteps: 6,
-  sandbox: { image: 'agentview/sandbox:base', network: false }, avatar: { model: 'default.glb', color: '#5b8def' },
+  sandbox: { image: 'agentview/sandbox:base', network: false }, avatar: { model: 'default.glb', color: '#5b9bd5' },
 };
 
 /** Agent list and form. `focus` opens that agent; `onChanged` lets the office reload after a save or delete. */
@@ -41,7 +45,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   }
 
   async function remove() {
-    if (!form || !confirm(`${form.name} 에이전트를 지울까요? 작업 파일은 남아요.`)) return;
+    if (!form || !(await ask(`${form.name} 에이전트를 지울까요? 작업 파일은 남아요.`))) return;
     try {
       await api(`/agents/${form.id}`, { method: 'DELETE' });
       setForm(null);
@@ -64,10 +68,6 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
           ))}
         </ul>
         <button className="add" onClick={() => open(null)}>+ 새 에이전트</button>
-        <h2 className="sub">모델 연결</h2>
-        <ul className="plain">
-          {models.map((m) => <li key={m.id}><b>{m.id}</b> · {m.defaultModel ?? '모델 미지정'}<br /><small>{m.baseURL}</small></li>)}
-        </ul>
       </aside>
 
       <section>
@@ -107,18 +107,24 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
                 ))}
               </fieldset>
             ))}
-            <div className="row">
-              <label>샌드박스 이미지
-                <input value={form.sandbox.image} onChange={(e) => set({ sandbox: { ...form.sandbox, image: e.target.value } })} />
+            <label>샌드박스 이미지
+              <input value={form.sandbox.image} onChange={(e) => set({ sandbox: { ...form.sandbox, image: e.target.value } })} />
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={form.sandbox.network} onChange={(e) => set({ sandbox: { ...form.sandbox, network: e.target.checked } })} />
+              샌드박스 인터넷 허용
+            </label>
+            <fieldset className="swatches">
+              <legend>캐릭터 색</legend>
+              {AVATAR_COLORS.map((c) => (
+                <button key={c} type="button" className="swatch" style={{ background: c }} aria-pressed={form.avatar.color === c}
+                  aria-label={`색 ${c}`} onClick={() => set({ avatar: { ...form.avatar, color: c } })} />
+              ))}
+              <label className={`swatch custom${AVATAR_COLORS.includes(form.avatar.color) ? '' : ' on'}`} title="직접 고르기"
+                style={AVATAR_COLORS.includes(form.avatar.color) ? undefined : { background: form.avatar.color }}>
+                <input type="color" value={form.avatar.color} onChange={(e) => set({ avatar: { ...form.avatar, color: e.target.value } })} aria-label="색 직접 고르기" />
               </label>
-              <label className="check">
-                <input type="checkbox" checked={form.sandbox.network} onChange={(e) => set({ sandbox: { ...form.sandbox, network: e.target.checked } })} />
-                샌드박스 인터넷 허용
-              </label>
-              <label>캐릭터 색
-                <input type="color" value={form.avatar.color} onChange={(e) => set({ avatar: { ...form.avatar, color: e.target.value } })} />
-              </label>
-            </div>
+            </fieldset>
             <div className="actions">
               <button className="primary" type="submit">저장</button>
               {!isNew && <button type="button" className="danger" onClick={remove}>삭제</button>}

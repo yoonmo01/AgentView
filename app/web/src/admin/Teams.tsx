@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, PATTERN_LABEL, type AgentDef, type TeamDef } from '../api.ts';
 import { TeamMark } from '../shell/ui.tsx';
+import { ask } from '../shell/ask.ts';
 
 /** Same palette as the server's TEAM_COLORS: none of them looks like a status color. */
 const TEAM_COLORS = ['#8a5cd6', '#1aa3a3', '#d6589c', '#3f51b5', '#9c6b3f', '#7a8f2a', '#5d6d7e', '#6d4c8f'];
@@ -51,7 +52,7 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
   }
 
   async function remove() {
-    if (!form || !confirm(`${form.name} 팀을 지울까요? 방이 비고, 공유 폴더 파일은 남아요.`)) return;
+    if (!form || !(await ask(`${form.name} 팀을 지울까요? 방이 비고, 공유 폴더 파일은 남아요.`))) return;
     try {
       await api(`/teams/${form.id}`, { method: 'DELETE' });
       setForm(null);

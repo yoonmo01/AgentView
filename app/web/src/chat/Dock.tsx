@@ -5,6 +5,7 @@ import { describeTool, displayStatus, type AgUiEvent, type OfficeState } from '.
 import { Avatar, Chip, TeamMark, TeamMembers } from '../shell/ui.tsx';
 import { dayGroup, shortTime } from './dates.ts';
 import { Files } from './Files.tsx';
+import { ask } from '../shell/ask.ts';
 
 type Line = { key: string; role: SessionMessage['role']; text: string; steps?: Step[]; model?: string | null; at?: string };
 
@@ -130,7 +131,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
   }
 
   async function removeSession(s: Session) {
-    if (!confirm(`"${s.title}" 대화를 지울까요? 실행 기록 파일은 남아요.`)) return;
+    if (!(await ask(`"${s.title}" 대화를 지울까요? 실행 기록 파일은 남아요.`))) return;
     await api(`/sessions/${s.id}`, { method: 'DELETE' }).catch(() => {});
     const l = await loadSessions();
     if (s.id === sessionId) { setSessionId(l[0]?.id ?? null); if (!l.length) setLines([]); }
