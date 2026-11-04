@@ -1,10 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 
-const GROUPS: [string, RegExp][] = [
-  ['Claude', /^claude/], ['GPT', /^(gpt|o\d)/], ['Gemini · Gemma', /gemini|gemma/], ['DeepSeek', /^deepseek/], ['GLM', /^glm/],
-];
-/** Provider heading for a gateway model id; anything unknown goes under "기타". */
-export const groupOf = (m: string) => GROUPS.find(([, re]) => re.test(m.toLowerCase()))?.[0] ?? '기타';
+/** These come first, in this order; every other family follows alphabetically under its own heading. */
+const FIRST = ['GPT', 'Claude', 'Gemini'];
+const NAMES: Record<string, string> = { gpt: 'GPT', o1: 'GPT', o3: 'GPT', o4: 'GPT', claude: 'Claude', gemini: 'Gemini', gemma: 'Gemma', deepseek: 'DeepSeek', glm: 'GLM', qwen: 'Qwen', llama: 'Llama', mistral: 'Mistral', grok: 'Grok' };
+
+/** Family heading for a gateway model id, from its first word ("google/gemma-4-31B-it" → Gemma). */
+export function groupOf(m: string): string {
+  const word = (m.split('/').pop() ?? m).split(/[-_.\s]/)[0].toLowerCase();
+  const base = word.replace(/\d+$/, '') || word; // qwen3 → qwen
+  return NAMES[word] ?? NAMES[base] ?? base.charAt(0).toUpperCase() + base.slice(1);
+}
+const rank = (g: string) => (FIRST.includes(g) ? FIRST.indexOf(g) : FIRST.length);
+export const compareGroups = (a: string, b: string) => rank(a) - rank(b) || a.localeCompare(b);
+
+/** Version numbers in an id, ignoring sizes like 31B and dates like 20251001. */
+const version = (m: string) => (m.replace(/\d+[bB]|\d{8}/g, '').match(/\d+/g) ?? []).map(Number);
+/** Newest first inside a family: higher version numbers win, then the name decides. */
+export function compareModels(a: string, b: string): number {
+  const va = version(a), vb = version(b);
+  for (let i = 0; i < Math.max(va.length, vb.length); i++) if ((va[i] ?? -1) !== (vb[i] ?? -1)) return (vb[i] ?? -1) - (va[i] ?? -1);
+  return a.localeCompare(b);
+}
 
 /**
  * Model picker for one message: a button that opens a searchable list grouped by provider, above the composer.
@@ -25,7 +41,7 @@ export function ModelPicker({ value, models, defaultModel, compact, onChange }: 
 
   const pick = (m: string) => { onChange(m); setOpen(false); setQ(''); };
   const shown = models.filter((m) => m !== defaultModel && m.toLowerCase().includes(q.trim().toLowerCase()));
-  const groups = [...new Set(shown.map(groupOf))];
+  const groups = [...new Set(shown.map(groupOf))].sort(compareGroups);
   const label = value || (compact ? defaultModel || '기본 모델' : `기본 모델 (${defaultModel || '연결 기본값'})`);
 
   return (
@@ -36,7 +52,7 @@ export function ModelPicker({ value, models, defaultModel, compact, onChange }: 
       {open && (
         <div className="model-pop" role="listbox" aria-label="모델">
           <input autoFocus placeholder="모델 검색" value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (shown[0]) pick(shown[0]); } }} />
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const first = groups[0] && shown.filter((m) => groupOf(m) === groups[0]).sort(compareModels)[0]; if (first) pick(first); } }} />
           <div className="model-list">
             {!q && (
               <button type="button" role="option" aria-selected={!value} onClick={() => pick('')}>
@@ -46,7 +62,7 @@ export function ModelPicker({ value, models, defaultModel, compact, onChange }: 
             {groups.map((g) => (
               <div key={g}>
                 <div className="model-group">{g}</div>
-                {shown.filter((m) => groupOf(m) === g).map((m) => (
+                {shown.filter((m) => groupOf(m) === g).sort(compareModels).map((m) => (
                   <button key={m} type="button" role="option" aria-selected={value === m} onClick={() => pick(m)}>{m}</button>
                 ))}
               </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, PATTERN_LABEL, type AgentDef, type TeamDef } from '../api.ts';
-import { TeamMark } from '../shell/ui.tsx';
+import { Avatar, TeamMark } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
 
 /** Same palette as the server's TEAM_COLORS: none of them looks like a status color. */
@@ -31,11 +31,17 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
   }, []);
 
   const set = (patch: Partial<TeamDef>) => setForm((f) => f && { ...f, ...patch });
+  const move = (from: number, to: number) => setForm((f) => {
+    if (!f || to < 0 || to >= f.members.length || from === to) return f;
+    const members = [...f.members];
+    members.splice(to, 0, ...members.splice(from, 1));
+    return { ...f, members };
+  });
   const setLimit = (k: keyof TeamDef['limits'], v: number) => setForm((f) => f && { ...f, limits: { ...f.limits, [k]: v } });
   const open = (t: TeamDef | null) => { setForm(t ?? { ...EMPTY, main: agents[0]?.id ?? '' }); setIsNew(!t); setMsg(null); };
   const candidates = form ? [
-    ...agents.filter((a) => a.id !== form.main).map((a) => ({ value: a.id, label: `${a.name} (${a.role || a.id})` })),
-    ...teams.filter((t) => t.id !== form.id).map((t) => ({ value: `team:${t.id}`, label: `${t.name} 팀` })),
+    ...agents.filter((a) => a.id !== form.main).map((a) => ({ value: a.id, label: a.name, note: a.role, mark: <Avatar agent={a} /> })),
+    ...teams.filter((t) => t.id !== form.id).map((t) => ({ value: `team:${t.id}`, label: `${t.name} 팀`, note: PATTERN_LABEL[t.pattern], mark: <TeamMark team={t} /> })),
   ] : [];
 
   async function save(e: FormEvent) {
@@ -104,15 +110,32 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </label>
-            <fieldset>
-              <legend>구성원 {form.pattern === 'debate' && '(발언 순서대로 체크)'}</legend>
-              {candidates.map((c) => (
-                <label key={c.value} className="check">
-                  <input type="checkbox" checked={form.members.includes(c.value)}
-                    onChange={(e) => set({ members: e.target.checked ? [...form.members, c.value] : form.members.filter((m) => m !== c.value) })} />
-                  {c.label}
-                </label>
-              ))}
+            <fieldset className="order">
+              <legend>{form.pattern === 'debate' ? '발언 순서' : '구성원'}</legend>
+              {/* the array order is the speaking order: move with the arrows or by dragging a row */}
+              <ol>
+                {form.members.map((m, i) => {
+                  const c = candidates.find((x) => x.value === m);
+                  return (
+                    <li key={m} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', String(i))}
+                      onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); move(Number(e.dataTransfer.getData('text/plain')), i); }}>
+                      <span className="num">{i + 1}</span>{c?.mark}<b>{c?.label ?? m}</b><small>{c?.note}</small>
+                      <button type="button" className="icon" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`${c?.label ?? m} 위로`}>↑</button>
+                      <button type="button" className="icon" onClick={() => move(i, i + 1)} disabled={i === form.members.length - 1} aria-label={`${c?.label ?? m} 아래로`}>↓</button>
+                      <button type="button" className="icon" onClick={() => set({ members: form.members.filter((x) => x !== m) })} aria-label={`${c?.label ?? m} 빼기`}>✕</button>
+                    </li>
+                  );
+                })}
+              </ol>
+              {!form.members.length && <p className="muted small">아래에서 구성원을 추가하세요.</p>}
+              {candidates.some((c) => !form.members.includes(c.value)) && (
+                <div className="add-chips">
+                  <small>추가</small>
+                  {candidates.filter((c) => !form.members.includes(c.value)).map((c) => (
+                    <button key={c.value} type="button" onClick={() => set({ members: [...form.members, c.value] })}>{c.mark} {c.label}</button>
+                  ))}
+                </div>
+              )}
             </fieldset>
             <div className="row">
               {form.pattern === 'debate' && (
