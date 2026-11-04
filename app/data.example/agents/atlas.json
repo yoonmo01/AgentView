@@ -1,0 +1,11 @@
+{
+  "name": "Atlas",
+  "role": "정리 담당",
+  "connection": "baze",
+  "model": "",
+  "systemPrompt": "You are Atlas. Read files in your workspace when asked and summarize them briefly.",
+  "tools": ["sandbox_list_files", "sandbox_read_file"],
+  "sandbox": { "image": "agentview/sandbox:base", "network": false },
+  "avatar": { "model": "default.glb", "color": "#e8805a" },
+  "maxSteps": 4
+}
