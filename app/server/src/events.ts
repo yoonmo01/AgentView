@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 export type Ev = { type: string; [key: string]: unknown };
@@ -68,14 +68,33 @@ export function createBus(dir: string) {
     return () => { listeners.delete(listener); };
   }
 
-  function list(): { runId: string; live: boolean; mtime: number }[] {
+  /** First events of a finished run without reading the whole file (run_info is the second event). */
+  function head(runId: string): Ev[] {
+    const fd = openSync(file(runId), 'r');
+    try {
+      const buf = Buffer.alloc(16_384);
+      const text = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString('utf8');
+      return text.split('\n').slice(0, 3).flatMap((l) => { try { return [JSON.parse(l) as Ev]; } catch { return []; } });
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /** Newest runs first, with the target and participating agent ids from run_info. */
+  function list(limit = 50): { runId: string; live: boolean; mtime: number; target?: string; agents: string[] }[] {
     return readdirSync(dir)
       .filter((f) => f.endsWith('.jsonl'))
       .map((f) => {
         const runId = f.slice(0, -'.jsonl'.length);
         return { runId, live: live.has(runId), mtime: statSync(path.join(dir, f)).mtimeMs };
       })
-      .sort((a, b) => b.mtime - a.mtime);
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, limit)
+      .map((r) => {
+        const info = (live.get(r.runId) ?? head(r.runId)).find((e) => e.name === 'agentview.run_info')?.value as
+          { target?: string; agents?: { id: string }[] } | undefined;
+        return { ...r, target: info?.target, agents: info?.agents?.map((a) => a.id) ?? [] };
+      });
   }
 
   return { emit, exists, history, follow, followAll, list };

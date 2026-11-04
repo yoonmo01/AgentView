@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import OpenAI from 'openai';
 
@@ -22,6 +22,7 @@ export const AGENT_ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
 
 const DEFAULTS = {
   role: '',
+  model: '',
   systemPrompt: '',
   tools: [],
   maxSteps: 6,
@@ -29,11 +30,34 @@ const DEFAULTS = {
   avatar: { model: 'default.glb', color: '#5b8def' },
 };
 
-export async function loadAgent(dataDir: string, id: string): Promise<Agent> {
+export const withDefaults = (raw: Partial<Agent>, id: string): Agent => ({ ...DEFAULTS, name: id, ...raw, id }) as Agent;
+
+function agentFile(dataDir: string, id: string): string {
   if (!AGENT_ID.test(id)) throw new Error(`invalid agent id: ${id}`);
-  const raw = JSON.parse(await readFile(path.join(dataDir, 'agents', `${id}.json`), 'utf8'));
-  return { ...DEFAULTS, name: id, ...raw, id };
+  return path.join(dataDir, 'agents', `${id}.json`);
 }
+
+export const agentExists = (dataDir: string, id: string) => existsSync(agentFile(dataDir, id));
+
+export async function loadAgent(dataDir: string, id: string): Promise<Agent> {
+  return withDefaults(JSON.parse(await readFile(agentFile(dataDir, id), 'utf8')), id);
+}
+
+/** Reference checks the request schema cannot express. Returns an error message, or null when valid. */
+export function checkAgent(a: Agent, known: { connections: string[]; tools: string[] }): string | null {
+  if (!known.connections.includes(a.connection)) return `unknown model connection: ${a.connection}`;
+  const bad = a.tools.find((t) => !known.tools.includes(t));
+  return bad ? `unknown tool: ${bad}` : null;
+}
+
+export async function saveAgent(dataDir: string, agent: Agent): Promise<void> {
+  const { id, ...def } = agent; // the file name is the id
+  const file = agentFile(dataDir, id);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify(def, null, 2) + '\n');
+}
+
+export const deleteAgent = (dataDir: string, id: string) => unlink(agentFile(dataDir, id));
 
 export async function listAgents(dataDir: string): Promise<Agent[]> {
   const dir = path.join(dataDir, 'agents');
