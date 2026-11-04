@@ -1,7 +1,8 @@
 export type Status = 'idle' | 'thinking' | 'typing' | 'reading' | 'queued' | 'error' | 'done';
 /** `say` is what the agent is visibly doing right now: the tail of its streamed text, or its current action. */
 export type AgentView = { status: Status; tool?: string; runId: string; since: number; say?: string };
-export type RunView = { main: string; pattern: string; agents: string[]; live: boolean; subs: Record<string, string> };
+/** `target` is what the run was asked of (`agent:x` or `team:x`); `teams` are every team taking part. */
+export type RunView = { main: string; pattern: string; agents: string[]; live: boolean; subs: Record<string, string>; target?: string; teams?: string[] };
 export type OfficeState = {
   agents: Record<string, AgentView>;
   runs: Record<string, RunView>;
@@ -83,7 +84,7 @@ export function apply(s: OfficeState, runId: string, seq: number, e: AgUiEvent, 
   let { runs, links } = s;
   if (e.type === 'CUSTOM' && e.name === 'agentview.run_info') {
     const v = e.value;
-    runs = { ...runs, [runId]: { main: v.main, pattern: v.pattern ?? 'single', agents: (v.agents ?? []).map((a: { id: string }) => a.id), live: true, subs: {} } };
+    runs = { ...runs, [runId]: { main: v.main, pattern: v.pattern ?? 'single', agents: (v.agents ?? []).map((a: { id: string }) => a.id), live: true, subs: {}, target: v.target, teams: (v.teams ?? []).map((t: { id: string }) => t.id) } };
   }
   const run = runs[runId];
   const linkKey = `${runId}/${e.subagentRunId}`;

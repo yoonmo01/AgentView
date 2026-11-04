@@ -19,8 +19,10 @@ export const roomDesks = (r: number): Vec2[] => {
   const c = center(teamRoom(r));
   return [[-1.3, -0.9], [1.3, -0.9], [-1.3, 1.5], [1.3, 1.5]].map(([dx, dz]) => ({ x: c.x + dx, z: c.z + dz }));
 };
-// ponytail: 12 lobby desks; more unassigned agents than that share desks
-export const LOBBY_DESKS: Vec2[] = Array.from({ length: 12 }, (_, i) => ({ x: -9.3 + (i % 4) * 2.7, z: 1.2 + Math.floor(i / 4) * 2.5 }));
+/** Shared lobby desks for solo work, taken in order; nobody owns one. */
+export const LOBBY_DESKS: Vec2[] = Array.from({ length: 8 }, (_, i) => ({ x: -9.3 + (i % 4) * 2.7, z: 1.2 + Math.floor(i / 4) * 2.5 }));
+/** Where solo workers stand while all lobby desks are taken. */
+export const WAIT_SPOTS: Vec2[] = Array.from({ length: 6 }, (_, i) => ({ x: -9.6 + i * 1.2, z: 6.8 }));
 
 export const MEETING_SEATS = 6;
 export const meetingSeat = (i: number): Vec2 => {
@@ -78,23 +80,30 @@ export const DESK_SIZE = { w: 1.44, d: 0.9 };
 /** Desk chair: centered this far behind the desk center (toward -z), and its footprint. */
 export const DESK_CHAIR = { z: -SEAT - 0.1, size: 0.6 };
 
-export type Placement = { desk: Vec2; room: number | null };
-
-/** Each agent's desk: in the room of its first team (by id) that has a room and a free desk, else the lobby. */
-export function placeAgents(agents: AgentDef[], teams: TeamDef[]): Map<string, Placement> {
+/** Each team member's own desk in that team's room: main first, then members in order. Teams without a room seat nobody. */
+export function teamSeats(agents: AgentDef[], teams: TeamDef[]): Map<string, Map<string, Vec2>> {
   const known = new Set(agents.map((a) => a.id));
-  const out = new Map<string, Placement>();
-  const free = new Map<number, Vec2[]>();
-  for (const t of [...teams].sort((a, b) => a.id.localeCompare(b.id))) {
-    if (!t.room) continue;
-    if (!free.has(t.room)) free.set(t.room, roomDesks(t.room));
-    for (const id of [t.main, ...t.members]) {
-      if (out.has(id) || !known.has(id)) continue; // nested `team:` members are not people
-      const desk = free.get(t.room)!.shift();
-      if (desk) out.set(id, { desk, room: t.room });
-    }
+  return new Map(teams.map((t) => {
+    const desks = t.room ? roomDesks(t.room) : [];
+    const people = [t.main, ...t.members].filter((id) => known.has(id)); // nested `team:` members are not people
+    return [t.id, new Map(people.slice(0, desks.length).map((id, i) => [id, desks[i]]))];
+  }));
+}
+
+/**
+ * Lobby desk per solo worker. Whoever already has a desk keeps it; newcomers take the lowest free one;
+ * workers beyond the desks get none and wait standing (absent from the result).
+ */
+export function assignLobby(prev: Map<string, number>, working: string[], desks = LOBBY_DESKS.length): Map<string, number> {
+  const out = new Map([...prev].filter(([id]) => working.includes(id)));
+  const used = new Set(out.values());
+  for (const id of working) {
+    if (out.has(id)) continue;
+    let d = 0;
+    while (used.has(d)) d++;
+    if (d >= desks) break;
+    out.set(id, d);
+    used.add(d);
   }
-  let i = 0;
-  for (const a of agents) if (!out.has(a.id)) out.set(a.id, { desk: LOBBY_DESKS[i++ % LOBBY_DESKS.length], room: null });
   return out;
 }
