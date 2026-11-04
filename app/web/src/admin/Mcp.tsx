@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { api } from '../api.ts';
+import { ask } from '../shell/ask.ts';
 
 type McpServer = {
   name: string;
@@ -50,7 +51,7 @@ export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
 
   async function act(kind: 'reconnect' | 'delete') {
     if (!current) return;
-    if (kind === 'delete' && !confirm(`${current.name} 서버를 지울까요? 이 서버 도구를 쓰는 에이전트는 다음 호출에서 오류를 받아요.`)) return;
+    if (kind === 'delete' && !(await ask(`${current.name} 서버를 지울까요? 이 서버 도구를 쓰는 에이전트는 다음 호출에서 오류를 받아요.`))) return;
     setBusy(true);
     try {
       await api(kind === 'delete' ? `/mcp/${current.name}` : `/mcp/${current.name}/reconnect`, { method: kind === 'delete' ? 'DELETE' : 'POST' });
