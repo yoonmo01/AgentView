@@ -20,7 +20,7 @@ app/
 - `docker build -t agentview/sandbox:base app/sandbox`
 - `cp -r app/data.example app/data` 후 필요하면 `app/data/models.json`의 `defaultModel` 수정 (기본 `gpt-6-luna`)
 - `cp .env.example .env` 후 `BAZE_API_KEY` 입력 (BAZE > API Gateway에서 발급)
-- 대화 저장용 PostgreSQL: `cd app && npm run db` (Docker 컨테이너 `agentview-db`, 127.0.0.1:5433). 공유 서버에서는 `.env`에 `DATABASE_URL`을 넣는다. DB가 없어도 실행은 되지만 대화가 저장되지 않는다.
+- 대화 저장용 PostgreSQL: `cd app && npm run db` (Docker 컨테이너 `agentview-db`, 127.0.0.1:5433). 처음 한 번만 실행하면 되고, 이후에는 Docker Desktop이 켜질 때 같이 켜진다. 공유 서버에서는 `.env`에 `DATABASE_URL`을 넣는다. DB가 없어도 실행은 되지만 대화가 저장되지 않는다.
 - 가구 모델(선택): [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit)(CC0) zip을 `app/web/public/models/furniture/`에 풀기 (`kenney_furniture-kit/Models/GLTF format/*.glb`가 되도록). 없으면 가구가 단순한 상자로 그려진다. 이 폴더는 Git 제외.
 
 ## 실행 (`app/` 폴더에서)
