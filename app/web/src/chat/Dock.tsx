@@ -37,9 +37,9 @@ function Activity({ steps, live }: { steps: Step[]; live?: boolean }) {
  * Bottom-right chat with the picked agent or team. A session is one continuing conversation, saved on the server;
  * picking an old session shows it and continues it. The model can change per message.
  */
-export function Dock({ target, agents, teams, state, expanded, onExpand, onSettings }: {
+export function Dock({ target, agents, teams, state, expanded, beside, onExpand, onSettings }: {
   target: string | null; agents: AgentDef[]; teams: TeamDef[]; state: OfficeState;
-  expanded: boolean; onExpand: (open: boolean) => void; onSettings: (target: string) => void;
+  expanded: boolean; /** settings are open: sit to their left */ beside?: boolean; onExpand: (open: boolean) => void; onSettings: (target: string) => void;
 }) {
   const [connections, setConnections] = useState<ModelConn[]>([]);
   const [models, setModels] = useState<string[]>([]);
@@ -166,7 +166,7 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
 
   if (!expanded) {
     return (
-      <section className="dock collapsed" aria-label="채팅">
+      <section key="small" className={`dock collapsed${beside ? ' beside' : ''}`} aria-label="채팅">
         {target && (
           <button className="dock-who" onClick={() => onExpand(true)} title="대화 펼치기">
             {team ? <TeamMark team={team} /> : agent && <Avatar agent={agent} />} {name}
@@ -181,7 +181,7 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
 
   let lastGroup = '';
   return (
-    <section className="dock open" aria-label={`${name} 채팅`}>
+    <section key="big" className="dock open" aria-label={`${name} 채팅`}>
       <aside className="sessions">
         <button className="add" onClick={() => { setSessionId(null); setLines([]); setView('chat'); }} disabled={!target || !!live}>+ 새 대화</button>
         {dbOff && <p className="muted small">DB가 꺼져 있어 대화가 저장되지 않아요 (npm run db).</p>}
