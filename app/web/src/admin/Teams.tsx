@@ -11,7 +11,7 @@ const HELP: Record<TeamDef['pattern'], string> = {
   debate: '구성원이 라운드마다 차례로 발언하고, 메인(사회자)이 결론을 정리해요.',
 };
 
-export function Teams() {
+export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => void } = {}) {
   const [teams, setTeams] = useState<TeamDef[]>([]);
   const [agents, setAgents] = useState<AgentDef[]>([]);
   const [form, setForm] = useState<TeamDef | null>(null);
@@ -19,9 +19,9 @@ export function Teams() {
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
   const fail = (e: unknown) => setMsg({ text: (e as Error).message, error: true });
-  const reload = () => api<TeamDef[]>('/teams').then(setTeams);
+  const reload = () => api<TeamDef[]>('/teams').then((list) => { setTeams(list); return list; });
   useEffect(() => {
-    reload().catch(fail);
+    reload().then((list) => setForm(list.find((t) => t.id === focus) ?? null)).catch(fail);
     api<AgentDef[]>('/agents').then(setAgents).catch(fail);
   }, []);
 
@@ -42,6 +42,7 @@ export function Teams() {
       setIsNew(false);
       setMsg({ text: saved.room ? `저장했어요. ${saved.room}번 방을 배정했어요.` : '저장했어요. 빈 방이 없어서 구성원은 로비에 앉아요.' });
       await reload();
+      onChanged?.();
     } catch (err) { fail(err); }
   }
 
@@ -51,6 +52,7 @@ export function Teams() {
       await api(`/teams/${form.id}`, { method: 'DELETE' });
       setForm(null);
       await reload();
+      onChanged?.();
     } catch (err) { fail(err); }
   }
 

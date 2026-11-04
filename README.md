@@ -20,6 +20,7 @@ app/
 - `docker build -t agentview/sandbox:base app/sandbox`
 - `cp -r app/data.example app/data` 후 필요하면 `app/data/models.json`의 `defaultModel` 수정 (기본 `gpt-6-luna`)
 - `cp .env.example .env` 후 `BAZE_API_KEY` 입력 (BAZE > API Gateway에서 발급)
+- 대화 저장용 PostgreSQL: `cd app && npm run db` (Docker 컨테이너 `agentview-db`, 127.0.0.1:5433). 공유 서버에서는 `.env`에 `DATABASE_URL`을 넣는다. DB가 없어도 실행은 되지만 대화가 저장되지 않는다.
 - 가구 모델(선택): [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit)(CC0) zip을 `app/web/public/models/furniture/`에 풀기 (`kenney_furniture-kit/Models/GLTF format/*.glb`가 되도록). 없으면 가구가 단순한 상자로 그려진다. 이 폴더는 Git 제외.
 
 ## 실행 (`app/` 폴더에서)
@@ -29,12 +30,18 @@ npm start -w server      # http://127.0.0.1:8787  (개발 중에는 npm run dev 
 npm run dev -w web       # http://localhost:5173
 ```
 
-| 화면 | 주소 | 내용 |
-|---|---|---|
-| 오피스 | `/` | 팀 방 4개·로비·회의실·휴게실. 캐릭터 클릭 또는 목록 선택 → 상세 패널(지금 하는 일, 타임라인, 작업 폴더, 설정) |
-| 실행 다시 보기 | `/?run=<runId>` | 끝난 실행을 처음부터 재생 |
-| 채팅 | `/chat` | 에이전트나 팀을 골라 일 시키기, 취소. 옆에 오피스가 같이 보임 |
-| 관리 | `/admin` | 에이전트·팀·MCP 서버 만들기, 고치기, 지우기 |
+화면은 하나다 (`http://localhost:5173`). 오피스가 화면 전체를 차지하고, 그 위에 세 가지가 뜬다.
+
+| 위치 | 내용 |
+|---|---|
+| 왼쪽 위 목록 | 에이전트와 팀, 상태 색. 누르면 그 대상의 채팅이 열린다 |
+| 오른쪽 위 ⚙ 설정 | 에이전트·팀·MCP 관리 창 |
+| 오른쪽 아래 채팅 | 대상별 세션 목록, 대화(작업 내역 포함), 메시지마다 모델 선택, 작업 폴더 보기 |
+
+- 오피스에서 캐릭터를 누르면 그 에이전트, 팀 방 이름표를 누르면 그 팀과 대화한다.
+- 세션은 대화 하나다. 지난 세션을 고르면 그 대화가 그대로 이어진다. 새 대화는 `+ 새 대화`.
+- 캐릭터 발밑 원과 이름표 점의 색이 상태다(회색 대기, 파랑 생각 중, 주황 작업 중, 보라 읽는 중, 노랑 대기열, 초록 완료, 빨강 오류). 일하는 동안 머리 위 말풍선에 모델이 쓰는 문장이나 지금 하는 행동이 뜬다.
+- 실행 다시 보기: `/?run=<runId>`
 
 ### 팀
 

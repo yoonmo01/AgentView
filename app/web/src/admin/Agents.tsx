@@ -6,7 +6,8 @@ const EMPTY: AgentDef = {
   sandbox: { image: 'agentview/sandbox:base', network: false }, avatar: { model: 'default.glb', color: '#5b8def' },
 };
 
-export function Agents() {
+/** Agent list and form. `focus` opens that agent; `onChanged` lets the office reload after a save or delete. */
+export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () => void } = {}) {
   const [agents, setAgents] = useState<AgentDef[]>([]);
   const [models, setModels] = useState<ModelConn[]>([]);
   const [tools, setTools] = useState<ToolInfo[]>([]);
@@ -17,8 +18,7 @@ export function Agents() {
   const fail = (e: unknown) => setMsg({ text: (e as Error).message, error: true });
   const reload = () => api<AgentDef[]>('/agents').then((list) => { setAgents(list); return list; });
   useEffect(() => {
-    const wanted = new URLSearchParams(location.search).get('agent');
-    reload().then((list) => setForm(list.find((a) => a.id === wanted) ?? null)).catch(fail);
+    reload().then((list) => setForm(list.find((a) => a.id === focus) ?? null)).catch(fail);
     api<ModelConn[]>('/models').then(setModels).catch(fail);
     api<ToolInfo[]>('/tools').then(setTools).catch(fail);
   }, []);
@@ -35,6 +35,7 @@ export function Agents() {
       setIsNew(false);
       setMsg({ text: '저장했어요.' });
       await reload();
+      onChanged?.();
     } catch (err) { fail(err); }
   }
 
@@ -44,6 +45,7 @@ export function Agents() {
       await api(`/agents/${form.id}`, { method: 'DELETE' });
       setForm(null);
       await reload();
+      onChanged?.();
     } catch (err) { fail(err); }
   }
 

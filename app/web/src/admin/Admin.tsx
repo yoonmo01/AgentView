@@ -1,22 +1,28 @@
-import { useState } from 'react';
 import { Agents } from './Agents.tsx';
 import { Mcp } from './Mcp.tsx';
 import { Teams } from './Teams.tsx';
 
-const TABS = { agents: '에이전트', teams: '팀', mcp: 'MCP' } as const;
-type Tab = keyof typeof TABS;
+export const SETTINGS_TABS = { agents: '에이전트', teams: '팀', mcp: 'MCP' } as const;
+export type SettingsTab = keyof typeof SETTINGS_TABS;
 
-export function Admin() {
-  const initial = new URLSearchParams(location.search).get('tab');
-  const [tab, setTab] = useState<Tab>(initial && initial in TABS ? (initial as Tab) : 'agents');
+/** Settings drawer over the office: agents, teams and MCP servers. Closed most of the time. */
+export function Settings({ tab, focus, onTab, onClose, onChanged }: {
+  tab: SettingsTab; focus?: string; onTab: (t: SettingsTab) => void; onClose: () => void; onChanged: () => void;
+}) {
   return (
-    <div className="admin-page">
-      <div role="tablist" className="tabs admin-tabs">
-        {(Object.keys(TABS) as Tab[]).map((k) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{TABS[k]}</button>
-        ))}
-      </div>
-      {tab === 'agents' ? <Agents /> : tab === 'teams' ? <Teams /> : <Mcp />}
-    </div>
+    <aside className="drawer" aria-label="설정">
+      <header>
+        <div role="tablist" className="tabs">
+          {(Object.keys(SETTINGS_TABS) as SettingsTab[]).map((k) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => onTab(k)}>{SETTINGS_TABS[k]}</button>
+          ))}
+        </div>
+        <button className="icon" onClick={onClose} aria-label="설정 닫기">✕</button>
+      </header>
+      {/* key: remount so `focus` applies when the drawer is reopened on another agent or team */}
+      {tab === 'agents' ? <Agents key={`a-${focus}`} focus={focus} onChanged={onChanged} />
+        : tab === 'teams' ? <Teams key={`t-${focus}`} focus={focus} onChanged={onChanged} />
+        : <Mcp onChanged={onChanged} />}
+    </aside>
   );
 }

@@ -59,6 +59,22 @@ describe('office state', () => {
     expect(ended.runs.r1.live).toBe(false);
   });
 
+  it('keeps a live line of what the agent is saying or doing', () => {
+    const s = feed([
+      info('nova'),
+      { type: 'TEXT_MESSAGE_START', messageId: 'm' },
+      { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'Let me write ' },
+      { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'the file.' },
+    ]);
+    expect(s.agents.nova).toMatchObject({ status: 'thinking', say: 'Let me write the file.' });
+    const t = feed([
+      info('nova'),
+      { type: 'TOOL_CALL_START', toolCallId: 't', toolCallName: 'sandbox_run' },
+      { type: 'TOOL_CALL_ARGS', toolCallId: 't', delta: '{"command":"python hi.py"}' },
+    ]);
+    expect(t.agents.nova).toMatchObject({ status: 'typing', say: '실행: python hi.py' });
+  });
+
   it('shows agents waiting for another run as queued', () => {
     expect(feed([{ type: 'CUSTOM', name: 'agentview.queued', value: { agentId: 'nova' } }]).agents.nova.status).toBe('queued');
   });
