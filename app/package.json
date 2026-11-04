@@ -1,0 +1,10 @@
+{
+  "name": "agentview",
+  "private": true,
+  "engines": { "node": ">=22.18" },
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "test": "npm test --workspaces",
+    "typecheck": "npm run typecheck --workspaces"
+  }
+}

@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AgentView
+# The Python template above ignores every lib/ folder; keep Node source folders named lib.
+!lib/
+docs/
+.playwright-cli/
