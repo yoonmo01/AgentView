@@ -120,6 +120,17 @@ describe('runner', () => {
     expect(seen[1].messages.at(-1)).toEqual({ role: 'user', content: 'write it' }); // member starts fresh with the task
   });
 
+  it('team roles: members are introduced by their team role and get the team instructions', async () => {
+    const seen: ChatRequest[] = [];
+    const dev = { ...team('dev', 'supervisor', 'atlas', ['nova', 'milo']), roles: { nova: { role: '백엔드', instructions: '테스트는 쓰지 마' } } };
+    await runTeam(byAgent({ atlas: [call('d1', 'delegate', { member: 'nova', task: 'write it' }), text('done')] }, seen), [dev]);
+    expect(seen[0].tools.find((t) => t.function.name === 'delegate')!.function.description).toContain('(백엔드)');
+    const sys = seen[1].messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
+    expect(sys).toContain('역할: 백엔드');
+    expect(sys).toContain('테스트는 쓰지 마');
+    expect(seen[0].messages.some((m) => String(m.content).includes('테스트는 쓰지 마'))).toBe(false); // only nova gets it
+  });
+
   it('parallel: every member runs, then the main merges their results', async () => {
     const seen: ChatRequest[] = [];
     const evs = await runTeam(byAgent({}, seen), [team('pair', 'parallel', 'atlas', ['nova', 'milo'])]);

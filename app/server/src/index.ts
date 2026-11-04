@@ -54,6 +54,8 @@ const TEAM_BODY = {
     } },
     room: {}, // assigned by the server; any client value is ignored
     color: { type: 'string', pattern: '^(#[0-9a-f]{6})?$' },
+    roles: { type: 'object', maxProperties: 21, propertyNames: { pattern: AGENT_ID.source },
+      additionalProperties: { type: 'object', additionalProperties: false, properties: { role: { type: 'string', maxLength: 200 }, instructions: { type: 'string', maxLength: 4000 } } } },
   },
 };
 
@@ -149,6 +151,9 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     const team = teamWithDefaults({ ...body, room: null }, id);
     const error = checkTeam(team, new Set((await listAgents(opts.dataDir)).map((a) => a.id)), new Map(teams.map((t) => [t.id, t])));
     if (error) return reply.code(400).send({ error });
+    // keep notes only for people in the team, and drop empty ones
+    team.roles = Object.fromEntries(Object.entries(team.roles).filter(([id, r]) => (id === team.main || team.members.includes(id)) && (r.role?.trim() || r.instructions?.trim()))
+      .map(([id, r]) => [id, { role: r.role?.trim() ?? '', instructions: r.instructions?.trim() ?? '' }]));
     team.room = assignRoom(team, teams);
     team.color = assignColor(team, teams);
     await saveTeam(opts.dataDir, team);

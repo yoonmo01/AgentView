@@ -177,11 +177,19 @@ async function runSub(name: string, input: ChatMessage[], ctx: Ctx, opts: { pare
   }
 }
 
-const label = (m: string, ctx: Ctx) => {
-  const team = teamOf(m, ctx);
-  if (team) return `${team.name} (팀)`;
+/** How a member is introduced inside `team`: its team role when set, else its own role. */
+const label = (m: string, ctx: Ctx, team?: Team) => {
+  const sub = teamOf(m, ctx);
+  if (sub) return `${sub.name} (팀)`;
   const a = ctx.defs.agents.get(m);
-  return a ? `${a.name}${a.role ? ` (${a.role})` : ''}` : m;
+  const role = team?.roles?.[m]?.role || a?.role;
+  return a ? `${a.name}${role ? ` (${role})` : ''}` : m;
+};
+/** The person's role and extra instructions in this team, as a system note added after its own prompt; nothing when unset. */
+const brief = (team: Team, m: string): ChatMessage[] => {
+  const r = team.roles?.[m];
+  const lines = [r?.role && `이 팀(${team.name})에서 당신의 역할: ${r.role}`, r?.instructions && `이 팀(${team.name})에서의 추가 지시:\n${r.instructions}`].filter(Boolean);
+  return lines.length ? [note(lines.join('\n\n'))] : [];
 };
 const folder = (team: Team) => note(`팀 공유 폴더: /team/${team.id} (팀원과 파일을 주고받을 때 사용)`);
 
@@ -195,7 +203,7 @@ async function supervisor(team: Team, input: ChatMessage[], ctx: Ctx): Promise<s
       type: 'function',
       function: {
         name: 'delegate',
-        description: `Give one team member a task and get their result back. Members:\n${team.members.map((m) => `- ${m}: ${label(m, ctx)}`).join('\n')}`,
+        description: `Give one team member a task and get their result back. Members:\n${team.members.map((m) => `- ${m}: ${label(m, ctx, team)}`).join('\n')}`,
         parameters: {
           type: 'object',
           properties: {
@@ -209,20 +217,20 @@ async function supervisor(team: Team, input: ChatMessage[], ctx: Ctx): Promise<s
     run: (args, toolCallId, at) => {
       const member = String(args.member);
       if (!team.members.includes(member)) throw new Error(`not a member of ${team.id}: ${member}`);
-      return runSub(member, [folder(team), say(String(args.task ?? ''))], at, { parentToolCallId: toolCallId });
+      return runSub(member, [folder(team), ...brief(team, member), say(String(args.task ?? ''))], at, { parentToolCallId: toolCallId });
     },
   };
-  return runMain(team, [folder(team), ...input], ctx, delegate);
+  return runMain(team, [folder(team), ...brief(team, team.main), ...input], ctx, delegate);
 }
 
 async function parallel(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
   const results = await Promise.allSettled(team.members.map((m) =>
-    runSub(m, [folder(team), ...input, say(`당신의 역할: ${label(m, ctx)}. 위 요청에서 이 역할에 해당하는 부분을 맡아 처리하고 결과를 보고하세요.`)], ctx)));
+    runSub(m, [folder(team), ...brief(team, m), ...input, say(`당신의 역할: ${label(m, ctx, team)}. 위 요청에서 이 역할에 해당하는 부분을 맡아 처리하고 결과를 보고하세요.`)], ctx)));
   const fatal = results.find((r): r is PromiseRejectedResult => r.status === 'rejected' && (ctx.signal.aborted || r.reason instanceof LimitError));
   if (fatal) throw fatal.reason;
   const report = results.map((r, i) =>
-    `[${label(team.members[i], ctx)}]\n${r.status === 'fulfilled' ? r.value : `(실패: ${(r.reason as Error).message})`}`).join('\n\n');
-  return runMain(team, [folder(team), ...input, say(`팀원 결과:\n\n${report}\n\n이 결과를 합쳐 최종 답을 쓰세요.`)], ctx);
+    `[${label(team.members[i], ctx, team)}]\n${r.status === 'fulfilled' ? r.value : `(실패: ${(r.reason as Error).message})`}`).join('\n\n');
+  return runMain(team, [folder(team), ...brief(team, team.main), ...input, say(`팀원 결과:\n\n${report}\n\n이 결과를 합쳐 최종 답을 쓰세요.`)], ctx);
 }
 
 async function debate(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
@@ -231,13 +239,13 @@ async function debate(team: Team, input: ChatMessage[], ctx: Ctx): Promise<strin
   for (let round = 1; round <= rounds; round++) {
     for (const m of team.members) {
       ctx.emit({ type: EventType.CUSTOM, name: 'agentview.debate_turn', value: { round, speaker: m } });
-      const r = await runSub(m, [...input, say(
+      const r = await runSub(m, [...brief(team, m), ...input, say(
         `토론 ${round}/${rounds}라운드입니다. 지금까지의 발언:\n${said.join('\n\n') || '(아직 없음)'}\n\n` +
-        `당신(${label(m, ctx)}) 차례입니다. 앞선 의견을 참고해 짧게 말하세요.`)], ctx);
-      said.push(`[${label(m, ctx)}] ${r}`);
+        `당신(${label(m, ctx, team)}) 차례입니다. 앞선 의견을 참고해 짧게 말하세요.`)], ctx);
+      said.push(`[${label(m, ctx, team)}] ${r}`);
     }
   }
-  return runMain(team, [...input, say(`토론 기록:\n\n${said.join('\n\n')}\n\n사회자로서 결론을 정리하세요.`)], ctx);
+  return runMain(team, [...brief(team, team.main), ...input, say(`토론 기록:\n\n${said.join('\n\n')}\n\n사회자로서 결론을 정리하세요.`)], ctx);
 }
 
 const patterns: Record<Team['pattern'], (team: Team, input: ChatMessage[], ctx: Ctx) => Promise<string>> = { supervisor, parallel, debate };
