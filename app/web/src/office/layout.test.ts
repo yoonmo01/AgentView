@@ -1,25 +1,24 @@
 import { expect, it } from 'vitest';
 import type { AgentDef, TeamDef } from '../api.ts';
-import { LOBBY_DESKS, placeAgents, roomDesks } from './layout.ts';
+import { assignLobby, roomDesks, teamSeats } from './layout.ts';
 
 const agent = (id: string) => ({ id }) as AgentDef;
 const team = (id: string, room: number | null, main: string, members: string[]) => ({ id, room, main, members }) as TeamDef;
 
-it('seats team members in their room, the rest in the lobby', () => {
-  const agents = ['atlas', 'nova', 'milo', 'solo'].map(agent);
-  const places = placeAgents(agents, [
-    team('b-team', 2, 'milo', ['nova', 'team:a-team']),
-    team('a-team', 1, 'atlas', ['nova']), // nova's first team by id is a-team
-    team('full', null, 'solo', []),
+it('gives every member an own desk per team, main first', () => {
+  const seats = teamSeats(['atlas', 'nova', 'milo'].map(agent), [
+    team('dev', 1, 'atlas', ['nova', 'team:x']),
+    team('talk', 2, 'milo', ['nova', 'atlas']), // nova has a seat in both rooms
+    team('none', null, 'milo', []),
   ]);
-  expect(places.get('atlas')).toEqual({ desk: roomDesks(1)[0], room: 1 });
-  expect(places.get('nova')).toEqual({ desk: roomDesks(1)[1], room: 1 });
-  expect(places.get('milo')).toEqual({ desk: roomDesks(2)[0], room: 2 });
-  expect(places.get('solo')).toEqual({ desk: LOBBY_DESKS[0], room: null });
+  expect([...seats.get('dev')!]).toEqual([['atlas', roomDesks(1)[0]], ['nova', roomDesks(1)[1]]]);
+  expect(seats.get('talk')!.get('nova')).toEqual(roomDesks(2)[1]);
+  expect(seats.get('none')!.size).toBe(0);
 });
 
-it('sends members past the room capacity to the lobby', () => {
-  const ids = ['a', 'b', 'c', 'd', 'e'];
-  const places = placeAgents(ids.map(agent), [team('big', 3, 'a', ids.slice(1))]);
-  expect(ids.map((id) => places.get(id)!.room)).toEqual([3, 3, 3, 3, null]);
+it('keeps lobby desks stable and lets extra solo workers wait', () => {
+  let m = assignLobby(new Map(), ['a', 'b', 'c'], 2);
+  expect([...m]).toEqual([['a', 0], ['b', 1]]); // c waits
+  m = assignLobby(m, ['b', 'c']); // a finished: c takes the freed desk, b stays put
+  expect([...m]).toEqual([['b', 1], ['c', 0]]);
 });

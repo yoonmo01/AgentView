@@ -5,7 +5,7 @@ import { BufferAttribute, BufferGeometry, Vector3 } from 'three';
 import type { AgentDef, TeamDef } from '../api.ts';
 import { Character, placeLabel, type Mode } from './Character.tsx';
 import { Building, DeskSet } from './Furniture.tsx';
-import { center, FLOOR, LOBBY, LOBBY_DESKS, LOUNGE, MEETING, meetingSeat, placeAgents, ROOMS, roomDesks, SEAT, TALL, teamRoom } from './layout.ts';
+import { assignLobby, center, FLOOR, LOBBY, LOBBY_DESKS, LOUNGE, MEETING, meetingSeat, ROOMS, roomDesks, SEAT, TALL, teamRoom, teamSeats, WAIT_SPOTS, type Vec2 } from './layout.ts';
 import { buildGrid } from './nav.ts';
 import { Chip } from '../shell/ui.tsx';
 import { COLOR, LABEL, displayStatus, type OfficeState } from './state.ts';
@@ -69,15 +69,25 @@ export function Office({ agents, teams, state, now, selected, selectedTeam, onSe
 }) {
   const labels = useRef(new Map<string, HTMLDivElement>());
   const positions = useRef(new Map<string, Vector3>()).current;
-  const places = useMemo(() => placeAgents(agents, teams), [agents, teams]);
+  const seats = useMemo(() => teamSeats(agents, teams), [agents, teams]);
   const statusOf = (id: string) => displayStatus(state.agents[id], now);
+  // where each agent works: its own desk in the room of the team it is working for, else a shared lobby desk
+  const teamDesk = (id: string): Vec2 | undefined => {
+    const run = state.runs[state.agents[id]?.runId ?? ''];
+    const ids = [run?.target?.startsWith('team:') ? run.target.slice('team:'.length) : '', ...(run?.teams ?? [])];
+    for (const t of ids) { const d = seats.get(t)?.get(id); if (d) return d; }
+  };
   const picked = teams.find((t) => t.id === selectedTeam);
   const ringOf = (id: string) => selected === id ? '#f0b400' : picked && (picked.main === id || picked.members.includes(id)) ? picked.color || '#26231f' : null;
-  const lobbyCount = [...places.values()].filter((p) => !p.room).length;
   const debates = Object.values(state.runs).filter((r) => r.live && r.pattern === 'debate');
-  const activeDesks = new Set(agents.filter((a) => statusOf(a.id) === 'typing').map((a) => { const d = places.get(a.id)!.desk; return `${d.x},${d.z}`; }));
-  const lobbyDesks = Math.max(4, Math.min(lobbyCount, LOBBY_DESKS.length));
-  const desks = useMemo(() => [...Array.from({ length: ROOMS }, (_, i) => roomDesks(i + 1)).flat(), ...LOBBY_DESKS.slice(0, lobbyDesks)], [lobbyDesks]);
+  const busy = agents.filter((a) => statusOf(a.id) !== 'idle' && !debates.some((r) => r.agents.includes(a.id)));
+  const lobby = useRef(new Map<string, number>());
+  lobby.current = assignLobby(lobby.current, busy.filter((a) => !teamDesk(a.id)).map((a) => a.id));
+  const waiting = busy.filter((a) => !teamDesk(a.id) && !lobby.current.has(a.id)).map((a) => a.id);
+  /** desk an agent works at now, or undefined while it waits for a lobby desk */
+  const deskOf = (id: string) => teamDesk(id) ?? (lobby.current.has(id) ? LOBBY_DESKS[lobby.current.get(id)!] : undefined);
+  const activeDesks = new Set(agents.filter((a) => statusOf(a.id) === 'typing').map((a) => { const d = deskOf(a.id); return d ? `${d.x},${d.z}` : ''; }));
+  const desks = useMemo(() => [...Array.from({ length: ROOMS }, (_, i) => roomDesks(i + 1)).flat(), ...LOBBY_DESKS], []);
   const grid = useMemo(() => buildGrid(desks), [desks]);
   const rooms = [
     ...Array.from({ length: ROOMS }, (_, i) => {
@@ -103,15 +113,18 @@ export function Office({ agents, teams, state, now, selected, selectedTeam, onSe
         <Building teams={teams} />
         {desks.map((d) => <DeskSet key={`${d.x},${d.z}`} at={d} active={activeDesks.has(`${d.x},${d.z}`)} />)}
         {agents.map((a) => {
-          const place = places.get(a.id)!;
-          const seat = { x: place.desk.x, z: place.desk.z - SEAT };
+          const i = agents.indexOf(a);
+          const home = { x: LOBBY_DESKS[i % LOBBY_DESKS.length].x, z: LOBBY_DESKS[i % LOBBY_DESKS.length].z - SEAT }; // where idle strolls start
           const debate = debates.find((r) => r.agents.includes(a.id));
           const status = statusOf(a.id);
-          const mode: Mode = debate ? 'meeting' : status === 'idle' ? 'idle' : 'work';
-          const goal = debate ? meetingSeat(debate.agents.indexOf(a.id)) : seat;
+          const desk = deskOf(a.id);
+          const mode: Mode = debate ? 'meeting' : status === 'idle' ? 'idle' : desk ? 'work' : 'wait';
+          const goal = debate ? meetingSeat(debate.agents.indexOf(a.id))
+            : desk ? { x: desk.x, z: desk.z - SEAT }
+            : status === 'idle' ? home : WAIT_SPOTS[Math.max(0, waiting.indexOf(a.id)) % WAIT_SPOTS.length];
           const face = debate ? Math.atan2(center(MEETING).x - goal.x, center(MEETING).z - goal.z) : 0;
           return (
-            <Character key={a.id} agent={a} seat={seat} goal={goal} face={face} mode={mode} status={status}
+            <Character key={a.id} agent={a} seat={home} goal={goal} face={face} mode={mode} status={status}
               ring={ringOf(a.id)} onSelect={onSelect} label={() => labels.current.get(a.id)} positions={positions} grid={grid} />
           );
         })}

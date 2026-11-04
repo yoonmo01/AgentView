@@ -7,7 +7,8 @@ import { findPath, isFree, type Grid } from './nav.ts';
 import { COLOR, type Status } from './state.ts';
 
 /** work: at the own desk · meeting: at a meeting-room seat · idle: free to wander. */
-export type Mode = 'work' | 'meeting' | 'idle';
+/** work/meeting: walk to the goal and sit; wait: walk there and stand; idle: stroll. */
+export type Mode = 'work' | 'meeting' | 'wait' | 'idle';
 
 const projected = new Vector3();
 /** Move a DOM label over a 3D point (labels are plain DOM over the canvas). */
@@ -74,7 +75,7 @@ export function Character({ agent, seat, goal, face, mode, status, ring, onSelec
     if (!walking && mode !== 'idle') {
       g.rotation.y = face;
     }
-    const sitting = !walking && mode !== 'idle';
+    const sitting = !walking && (mode === 'work' || mode === 'meeting');
     const swing = walking ? Math.sin(t * 10) * 0.6 : 0;
     legL.current.rotation.x = sitting ? -1.45 : swing;
     legR.current.rotation.x = sitting ? -1.45 : -swing;
