@@ -106,6 +106,9 @@ describe('http api', () => {
     const created = await send('POST', '/teams', dev);
     expect(created.status).toBe(201);
     expect(await created.json()).toMatchObject({ room: 1, limits: { maxCalls: 50, rounds: 2 } }); // client room ignored
+    const roles = { nova: { role: ' 백엔드 ', instructions: '' }, atlas: { role: '', instructions: '' }, ghost: { role: 'x', instructions: '' } };
+    const withRoles = await (await send('PUT', '/teams/dev', { ...dev, roles })).json();
+    expect(withRoles.roles).toEqual({ nova: { role: '백엔드', instructions: '' } }); // trimmed; empty and non-member notes dropped
     expect((await send('POST', '/teams', { ...dev, id: 'bad', members: ['atlas'] })).status).toBe(400);
     expect((await send('POST', '/teams', { ...dev, id: 'big', members: ['team:dev'] })).status).toBe(201);
     expect((await send('PUT', '/teams/dev', { ...dev, members: ['team:big'] })).status).toBe(400); // cycle

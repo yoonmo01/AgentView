@@ -31,6 +31,8 @@ export type Team = {
   room: number | null;
   /** Team color (#rrggbb) for its room, label and members; picked by the server when not given. */
   color: string;
+  /** Per person in this team only: a role that replaces the agent's own, and instructions added to its own. Empty = the agent's defaults. */
+  roles: Record<string, { role: string; instructions: string }>;
 };
 /** Team colors that do not look like a status color (green, orange, yellow, blue, red). */
 export const TEAM_COLORS = ['#8a5cd6', '#1aa3a3', '#d6589c', '#3f51b5', '#9c6b3f', '#7a8f2a', '#5d6d7e', '#6d4c8f'];
@@ -95,7 +97,7 @@ export const listAgents = async (dataDir: string) => Promise.all((await listIds(
 const TEAM_LIMITS = { maxDepth: 3, maxCalls: 50, timeoutSec: 600, rounds: 2 };
 
 export const teamWithDefaults = (raw: Partial<Team>, id: string): Team =>
-  ({ name: id, members: [], room: null, color: '', ...raw, limits: { ...TEAM_LIMITS, ...raw.limits }, id }) as Team;
+  ({ name: id, members: [], room: null, color: '', roles: {}, ...raw, limits: { ...TEAM_LIMITS, ...raw.limits }, id }) as Team;
 
 export const teamExists = (dataDir: string, id: string) => existsSync(defFile(dataDir, 'teams', id));
 export const loadTeam = async (dataDir: string, id: string) =>

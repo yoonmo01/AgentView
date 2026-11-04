@@ -1,13 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, PATTERN_LABEL, type AgentDef, type TeamDef } from '../api.ts';
 import { Avatar, TeamMark } from '../shell/ui.tsx';
+import { TeamDiagram } from './TeamDiagram.tsx';
 import { ask } from '../shell/ask.ts';
 
 /** Same palette as the server's TEAM_COLORS: none of them looks like a status color. */
 const TEAM_COLORS = ['#8a5cd6', '#1aa3a3', '#d6589c', '#3f51b5', '#9c6b3f', '#7a8f2a', '#5d6d7e', '#6d4c8f'];
 
 const EMPTY: TeamDef = {
-  id: '', name: '', pattern: 'supervisor', main: '', members: [], room: null, color: '',
+  id: '', name: '', pattern: 'supervisor', main: '', members: [], room: null, color: '', roles: {},
   limits: { maxDepth: 3, maxCalls: 50, timeoutSec: 600, rounds: 2 },
 };
 const HELP: Record<TeamDef['pattern'], string> = {
@@ -88,6 +89,7 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
         {!form ? <p>왼쪽에서 팀을 고르거나 새로 만드세요.</p> : (
           <form onSubmit={save} className="form">
             <h2>{isNew ? '새 팀' : form.name}</h2>
+            <TeamDiagram team={form} agents={agents} />
             <label>ID (영문 소문자·숫자·-)
               <input required pattern="[a-z0-9][a-z0-9\-]{0,40}" value={form.id} disabled={!isNew} onChange={(e) => set({ id: e.target.value })} />
             </label>
@@ -136,6 +138,25 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
                   ))}
                 </div>
               )}
+            </fieldset>
+            <fieldset className="roles">
+              <legend>팀에서의 역할과 지시</legend>
+              <small>이 팀으로 일할 때만 쓰여요. 비워 두면 에이전트 설정의 역할과 지시문을 그대로 써요. 혼자 일할 때는 쓰이지 않아요.</small>
+              {[form.main, ...form.members].filter((id) => !id.startsWith('team:')).map((id) => {
+                const a = agents.find((x) => x.id === id);
+                const r = form.roles?.[id] ?? { role: '', instructions: '' };
+                const put = (patch: Partial<typeof r>) => set({ roles: { ...form.roles, [id]: { ...r, ...patch } } });
+                return (
+                  <details key={id} open={!!(r.role || r.instructions)}>
+                    <summary>
+                      {a && <Avatar agent={a} />}<b>{id === form.main ? '★ ' : ''}{a?.name ?? id}</b>
+                      <small>{r.role || a?.role || '역할 없음'}{r.instructions ? ' · 추가 지시 있음' : ''}</small>
+                    </summary>
+                    <label>팀 내 역할<input maxLength={200} value={r.role} placeholder={a?.role || '예: 백엔드 담당'} onChange={(e) => put({ role: e.target.value })} /></label>
+                    <label>추가 지시<textarea rows={3} maxLength={4000} value={r.instructions} placeholder="예: 테스트 코드는 쓰지 말고 결과만 보고해" onChange={(e) => put({ instructions: e.target.value })} /></label>
+                  </details>
+                );
+              })}
             </fieldset>
             <div className="row">
               {form.pattern === 'debate' && (

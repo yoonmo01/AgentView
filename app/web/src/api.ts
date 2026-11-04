@@ -22,6 +22,8 @@ export type TeamDef = {
   room: number | null;
   /** #rrggbb; empty asks the server to pick one. */
   color: string;
+  /** Per person, used only when working in this team: a role replacing the agent's own and instructions added to its own. */
+  roles: Record<string, { role: string; instructions: string }>;
 };
 export const PATTERN_LABEL: Record<TeamDef['pattern'], string> = { supervisor: '메인-하위', parallel: '병렬 분담', debate: '토론' };
 export type ModelConn ={ id: string; baseURL: string; defaultModel?: string; maxTokens?: number };

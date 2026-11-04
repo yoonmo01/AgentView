@@ -278,3 +278,21 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 .add-chips button:hover { border-color: var(--accent); background: var(--accent-soft); }
 .add-chips .avatar { width: 20px; height: 20px; font-size: 11px; }
 .add-chips .square { margin-left: 4px; }
+
+/* team structure picture and per-team roles (settings › 팀) */
+.team-diagram { margin: 0; padding: 10px 8px 8px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.team-diagram svg { width: 100%; height: auto; display: block; color: #8d867a; }
+.team-diagram path { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.team-diagram path.back { stroke-dasharray: 4 4; opacity: 0.7; }
+.team-diagram .init { fill: #fff; font-size: 12px; font-weight: 700; }
+.team-diagram .name { fill: var(--text); font-size: 11.5px; font-weight: 600; }
+.team-diagram .cap { fill: var(--muted); font-size: 11px; }
+.team-diagram figcaption { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
+.form fieldset.roles { display: grid; gap: 6px; }
+.roles details { border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.roles summary { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; list-style: none; }
+.roles summary::-webkit-details-marker { display: none; }
+.roles summary small { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roles details[open] summary { border-bottom: 1px solid var(--line); }
+.roles details > label { display: grid; gap: 4px; padding: 8px 10px 0; }
+.roles details > label:last-child { padding-bottom: 10px; }
