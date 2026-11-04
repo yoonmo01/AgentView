@@ -11,9 +11,10 @@ export type Mode = 'work' | 'meeting' | 'idle';
 
 const projected = new Vector3();
 /** Move a DOM label over a 3D point (labels are plain DOM over the canvas). */
-export function placeLabel(el: HTMLElement, x: number, y: number, z: number, camera: Camera, size: { width: number; height: number }) {
+/** `bottom` anchors the label's bottom center on the point (stacks above a head); otherwise its center. */
+export function placeLabel(el: HTMLElement, x: number, y: number, z: number, camera: Camera, size: { width: number; height: number }, bottom = false) {
   projected.set(x, y, z).project(camera);
-  el.style.transform = `translate(${((projected.x + 1) / 2) * size.width}px, ${((1 - projected.y) / 2) * size.height}px) translate(-50%, -50%)`;
+  el.style.transform = `translate(${((projected.x + 1) / 2) * size.width}px, ${((1 - projected.y) / 2) * size.height}px) translate(-50%, ${bottom ? '-100%' : '-50%'})`;
 }
 
 const SPEED = 1.6;
@@ -88,7 +89,7 @@ export function Character({ agent, seat, goal, face, mode, status, ring, onSelec
 
     (positions.get(agent.id) ?? positions.set(agent.id, new Vector3()).get(agent.id)!).copy(g.position);
     const el = label();
-    if (el) placeLabel(el, g.position.x, 1.55 + body.current.position.y, g.position.z, camera, size);
+    if (el) placeLabel(el, g.position.x, 1.42 + body.current.position.y, g.position.z, camera, size, true);
   });
 
   const color = status === 'error' ? '#d9534f' : agent.avatar.color;
