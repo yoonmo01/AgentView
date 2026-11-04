@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, readSse, type AgentDef } from '../api.ts';
+import { api, PATTERN_LABEL, readSse, type AgentDef, type TeamDef } from '../api.ts';
 import { Office } from '../office/Office.tsx';
 import { useOffice } from '../office/useOffice.ts';
 
@@ -9,6 +9,7 @@ type Line = { id: string; role: 'user' | 'assistant'; content: string; tools: st
 export function Chat() {
   const state = useOffice(null);
   const [agents, setAgents] = useState<AgentDef[]>([]);
+  const [teams, setTeams] = useState<TeamDef[]>([]);
   const [target, setTarget] = useState('');
   const [lines, setLines] = useState<Line[]>([]);
   const [text, setText] = useState('');
@@ -20,6 +21,7 @@ export function Chat() {
   useEffect(() => {
     api<AgentDef[]>('/agents').then((list) => { setAgents(list); setTarget((t) => t || (list[0] ? `agent:${list[0].id}` : '')); })
       .catch(() => setLines([{ id: 'x', role: 'assistant', content: '', tools: [], error: '서버에 연결할 수 없어요. server가 실행 중인지 확인하세요.' }]));
+    api<TeamDef[]>('/teams').then(setTeams).catch(() => {});
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -66,7 +68,14 @@ export function Chat() {
       <section className="chat">
         <label>대상
           <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={!!runId}>
-            {agents.map((a) => <option key={a.id} value={`agent:${a.id}`}>{a.name} ({a.role || a.id})</option>)}
+            <optgroup label="에이전트">
+              {agents.map((a) => <option key={a.id} value={`agent:${a.id}`}>{a.name} ({a.role || a.id})</option>)}
+            </optgroup>
+            {teams.length > 0 && (
+              <optgroup label="팀">
+                {teams.map((t) => <option key={t.id} value={`team:${t.id}`}>{t.name} ({PATTERN_LABEL[t.pattern]})</option>)}
+              </optgroup>
+            )}
           </select>
         </label>
         <ol className="messages" ref={log} aria-live="polite">

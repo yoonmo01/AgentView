@@ -28,6 +28,9 @@ small { color: #777; }
 .tag-error { border-color: #e04848; color: #b00; }
 .tag-done { border-color: #3aa76d; }
 
+.admin-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.admin-tabs { padding: 8px 24px 0; margin: 0; }
+.tabs button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 4px 12px; }
 .admin { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: 280px 1fr; gap: 24px; padding: 16px 24px; }
 .admin aside { display: grid; align-content: start; gap: 8px; }
 .plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 14px; }
