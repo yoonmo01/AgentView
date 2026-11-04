@@ -2,7 +2,7 @@ import { useGLTF } from '@react-three/drei';
 import { Component, Suspense, useMemo, type ReactNode } from 'react';
 import { Box3, Vector3, type Mesh } from 'three';
 import type { TeamDef } from '../api.ts';
-import { center, FLOOR, LOBBY, LOUNGE, MEETING, meetingSeat, MEETING_SEATS, ROOMS, SEAT, teamRoom, type Rect, type Vec2 } from './layout.ts';
+import { center, DESK_SIZE, FLOOR, LOBBY, LOUNGE, MEETING, PROPS, ROOMS, SEAT, TALL, teamRoom, WALL_T, WALLS, type Rect, type Vec2 } from './layout.ts';
 
 // Kenney Furniture Kit (CC0), installed separately into public/models/furniture (see README).
 const BASE = '/models/furniture/kenney_furniture-kit/Models/GLTF format/';
@@ -49,7 +49,7 @@ const DESK_H = 0.76;
 export function DeskSet({ at, active }: { at: Vec2; active: boolean }) {
   return (
     <group position={[at.x, 0, at.z]}>
-      <Model name="desk" rot={Math.PI} size={[1.44, DESK_H, 0.9]} />
+      <Model name="desk" rot={Math.PI} size={[DESK_SIZE.w, DESK_H, DESK_SIZE.d]} />
       <Model name="computerScreen" at={[0, DESK_H, 0.15]} rot={Math.PI} size={[0.7, 0.5, 0.06]} color="#333333" />
       <mesh position={[0, DESK_H + 0.3, 0.08]} rotation-y={Math.PI}>
         <planeGeometry args={[0.62, 0.36]} />
@@ -60,22 +60,6 @@ export function DeskSet({ at, active }: { at: Vec2; active: boolean }) {
     </group>
   );
 }
-
-const LOW = 0.5;
-const TALL = 1.6;
-const T = 0.12;
-const door = (x0: number, x1: number, z: number, gap = 1.4): [number, number, number, number, number][] => {
-  const c = (x0 + x1) / 2;
-  return [[x0, z, c - gap / 2, z, LOW], [c + gap / 2, z, x1, z, LOW]];
-};
-// [x0, z0, x1, z1, height]: tall outer walls at the back and sides, low walls inside so the camera sees over them
-const WALLS: [number, number, number, number, number][] = [
-  [FLOOR.x0, FLOOR.z0, FLOOR.x1, FLOOR.z0, TALL], [FLOOR.x0, FLOOR.z0, FLOOR.x0, FLOOR.z1, TALL], [FLOOR.x1, FLOOR.z0, FLOOR.x1, FLOOR.z1, TALL],
-  ...Array.from({ length: ROOMS }, (_, i) => door(teamRoom(i + 1).x0, teamRoom(i + 1).x1, teamRoom(1).z1)).flat(),
-  ...Array.from({ length: ROOMS - 1 }, (_, i): [number, number, number, number, number] => [teamRoom(i + 1).x1, FLOOR.z0, teamRoom(i + 1).x1, teamRoom(1).z1, LOW]),
-  [MEETING.x0, MEETING.z0, MEETING.x0, -0.6, LOW], [MEETING.x0, 0.8, MEETING.x0, 4.6, LOW], [MEETING.x0, 6, MEETING.x0, FLOOR.z1, LOW],
-  ...door(MEETING.x0, MEETING.x1, MEETING.z1),
-];
 
 function Floor({ r, color }: { r: Rect; color: string }) {
   const c = center(r);
@@ -89,7 +73,6 @@ function Floor({ r, color }: { r: Rect; color: string }) {
 
 /** Everything that does not move: floors, walls and the shared rooms' furniture. */
 export function Building({ teams }: { teams: TeamDef[] }) {
-  const meet = center(MEETING);
   const used = new Set(teams.map((t) => t.room));
   return (
     <group>
@@ -103,37 +86,12 @@ export function Building({ teams }: { teams: TeamDef[] }) {
       <Floor r={LOUNGE} color="#eadccd" />
       {WALLS.map(([x0, z0, x1, z1, h], i) => (
         <mesh key={i} position={[(x0 + x1) / 2, h / 2, (z0 + z1) / 2]} castShadow receiveShadow>
-          <boxGeometry args={[Math.abs(x1 - x0) + T, h, Math.abs(z1 - z0) + T]} />
+          <boxGeometry args={[Math.abs(x1 - x0) + WALL_T, h, Math.abs(z1 - z0) + WALL_T]} />
           <meshStandardMaterial color={h === TALL ? '#f3efe7' : '#cfc6b6'} />
         </mesh>
       ))}
 
-      {Array.from({ length: ROOMS }, (_, i) => {
-        const r = teamRoom(i + 1);
-        return (
-          <group key={i}>
-            <Model name="bookcaseOpen" at={[r.x0 + 0.7, 0, r.z0 + 0.35]} size={[0.8, 1.76, 0.5]} />
-            <Model name="pottedPlant" at={[r.x1 - 0.5, 0, r.z0 + 0.5]} size={[0.5, 1, 0.5]} color="#5c8a4d" />
-          </group>
-        );
-      })}
-
-      <Model name="tableRound" at={[meet.x, 0, meet.z]} size={[1.4, 0.75, 1.6]} />
-      {Array.from({ length: MEETING_SEATS }, (_, i) => {
-        const s = meetingSeat(i);
-        return <Model key={i} name="chair" at={[s.x, 0, s.z]} rot={Math.atan2(meet.x - s.x, meet.z - s.z)} size={[0.4, 0.9, 0.4]} />;
-      })}
-
-      <Model name="rugRound" at={[4.5, 0.01, 4.8]} size={[2.4, 0.02, 2.4]} color="#c9b8e0" />
-      <Model name="loungeSofa" at={[4.5, 0, 3.7]} size={[2, 0.9, 0.85]} color="#7d9ac2" />
-      <Model name="tableCoffee" at={[4.5, 0, 5.1]} size={[1.2, 0.4, 0.7]} />
-      <Model name="loungeChair" at={[7, 0, 5]} rot={-Math.PI / 2} size={[0.9, 0.8, 0.9]} color="#7d9ac2" />
-      <Model name="kitchenBar" at={[10.5, 0, 5.6]} rot={-Math.PI / 2} size={[0.9, 0.85, 0.45]} />
-      <Model name="kitchenCoffeeMachine" at={[10.5, 0.85, 5.6]} rot={-Math.PI / 2} size={[0.5, 0.6, 0.6]} color="#333333" />
-      <Model name="pottedPlant" at={[10.4, 0, 7.4]} size={[0.5, 1, 0.5]} color="#5c8a4d" />
-      <Model name="pottedPlant" at={[-10.4, 0, 7.4]} size={[0.5, 1, 0.5]} color="#5c8a4d" />
-      <Model name="pottedPlant" at={[0.9, 0, -1.9]} size={[0.5, 1, 0.5]} color="#5c8a4d" />
-      <Model name="bookcaseOpen" at={[-10.6, 0, 2.5]} rot={Math.PI / 2} size={[0.8, 1.76, 0.5]} />
+      {PROPS.map((p, i) => <Model key={i} name={p.name} at={[p.x, p.y ?? 0, p.z]} rot={p.rot} size={p.size} color={p.color} />)}
     </group>
   );
 }

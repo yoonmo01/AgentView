@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Vector3, type Group } from 'three';
 import type { AgentDef } from '../api.ts';
 import { LOUNGE_SPOTS, type Vec2 } from './layout.ts';
+import { findPath, isFree, type Grid } from './nav.ts';
 import type { Status } from './state.ts';
 
 /** work: at the own desk · meeting: at a meeting-room seat · idle: free to wander. */
@@ -18,9 +19,9 @@ export function placeLabel(el: HTMLElement, x: number, y: number, z: number, cam
 const SPEED = 1.6;
 const SKIN = '#ffe0bd';
 
-export function Character({ agent, seat, goal, face, mode, status, selected, onSelect, label, positions }: {
+export function Character({ agent, seat, goal, face, mode, status, selected, onSelect, label, positions, grid }: {
   agent: AgentDef; seat: Vec2; goal: Vec2; face: number; mode: Mode; status: Status; selected: boolean;
-  onSelect: (id: string) => void; label: () => HTMLDivElement | undefined; positions: Map<string, Vector3>;
+  onSelect: (id: string) => void; label: () => HTMLDivElement | undefined; positions: Map<string, Vector3>; grid: Grid;
 }) {
   const root = useRef<Group>(null);
   const body = useRef<Group>(null);
@@ -29,7 +30,9 @@ export function Character({ agent, seat, goal, face, mode, status, selected, onS
   const legL = useRef<Group>(null);
   const legR = useRef<Group>(null);
   const wander = useRef({ x: seat.x, z: seat.z, until: 0 });
+  const route = useRef<{ key: string; points: Vec2[] }>({ key: '', points: [] });
   useEffect(() => { root.current?.position.set(seat.x, 0, seat.z); }, []);
+  useEffect(() => { route.current.key = ''; }, [grid]); // furniture moved: plan again
 
   useFrame(({ clock, camera, size }, dt) => {
     const g = root.current;
@@ -40,21 +43,33 @@ export function Character({ agent, seat, goal, face, mode, status, selected, onS
       // decoration only: stroll near the desk or visit the lounge, never a work animation
       if (t > wander.current.until) {
         const lounge = Math.random() < 0.3 ? LOUNGE_SPOTS[Math.floor(Math.random() * LOUNGE_SPOTS.length)] : null;
-        const p = lounge ?? { x: seat.x + (Math.random() - 0.5) * 2.2, z: seat.z + 0.6 + Math.random() * 1.2 };
+        let p = lounge ?? seat;
+        for (let n = 0; !lounge && n < 8; n++) { // a free spot near the desk
+          const q = { x: seat.x + (Math.random() - 0.5) * 3, z: seat.z + (Math.random() - 0.5) * 3 };
+          if (isFree(grid, q)) { p = q; break; }
+        }
         wander.current = { ...p, until: t + (lounge ? 8 : 3) + Math.random() * 4 };
       }
       to = wander.current;
     }
-    const dx = to.x - g.position.x;
-    const dz = to.z - g.position.z;
-    const dist = Math.hypot(dx, dz);
-    const walking = dist > 0.05;
-    if (walking) {
-      const step = Math.min(dist, dt * SPEED);
+    const key = `${to.x.toFixed(2)},${to.z.toFixed(2)}`;
+    if (route.current.key !== key) route.current = { key, points: findPath(grid, { x: g.position.x, z: g.position.z }, to) };
+    const pts = route.current.points;
+    let walking = false;
+    let budget = Math.min(dt, 0.1) * SPEED; // clamp: a paused tab must not teleport through a wall on resume
+    while (pts.length && budget > 0) {
+      const dx = pts[0].x - g.position.x;
+      const dz = pts[0].z - g.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.02) { pts.shift(); continue; }
+      const step = Math.min(dist, budget);
       g.position.x += (dx / dist) * step;
       g.position.z += (dz / dist) * step;
       g.rotation.y = Math.atan2(dx, dz);
-    } else if (mode !== 'idle') {
+      budget -= step;
+      walking = true;
+    }
+    if (!walking && mode !== 'idle') {
       g.rotation.y = face;
     }
     const sitting = !walking && mode !== 'idle';

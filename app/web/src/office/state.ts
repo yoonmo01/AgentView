@@ -15,6 +15,10 @@ export const initial: OfficeState = { agents: {}, runs: {}, links: {}, seen: {} 
 export const LABEL: Record<Status, string> = {
   idle: '대기', thinking: '생각 중', typing: '작업 중', reading: '읽는 중', queued: '대기열', error: '오류', done: '완료',
 };
+/** Shown next to the label so status never relies on color alone. */
+export const ICON: Record<Status, string> = {
+  idle: '☕', thinking: '💭', typing: '⌨️', reading: '📖', queued: '⏳', error: '⚠️', done: '✅',
+};
 
 const WRITE_TOOLS = new Set(['sandbox_write_file', 'sandbox_run']);
 const SETTLE_MS = 5_000;

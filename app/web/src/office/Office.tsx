@@ -1,12 +1,13 @@
 import { MapControls, OrthographicCamera } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
-import { BufferAttribute, BufferGeometry, type Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, Vector3 } from 'three';
 import type { AgentDef, TeamDef } from '../api.ts';
 import { Character, placeLabel, type Mode } from './Character.tsx';
 import { Building, DeskSet } from './Furniture.tsx';
-import { center, LOBBY, LOBBY_DESKS, LOUNGE, MEETING, meetingSeat, placeAgents, ROOMS, roomDesks, SEAT, teamRoom } from './layout.ts';
-import { LABEL, displayStatus, type OfficeState } from './state.ts';
+import { center, FLOOR, LOBBY, LOBBY_DESKS, LOUNGE, MEETING, meetingSeat, placeAgents, ROOMS, roomDesks, SEAT, TALL, teamRoom } from './layout.ts';
+import { buildGrid } from './nav.ts';
+import { ICON, LABEL, displayStatus, type OfficeState } from './state.ts';
 
 const MAX_LINKS = 64;
 
@@ -29,13 +30,29 @@ function Links({ links, positions }: { links: OfficeState['links']; positions: M
   return <lineSegments geometry={geo} frustumCulled={false}><lineBasicMaterial color="#f0b400" /></lineSegments>;
 }
 
-/** Fit the whole floor in the canvas whenever its size changes (the user can still zoom afterwards). */
-function FitZoom() {
-  const { camera, size } = useThree();
+/** Center and fit the whole floor (with its tall walls) whenever the canvas size changes; the user can still pan and zoom. */
+function FitView() {
+  const { camera, size, controls } = useThree();
   useEffect(() => {
-    camera.zoom = Math.min(size.width / 25, size.height / 19);
+    const target = (controls as unknown as { target?: Vector3; update?: () => void } | null);
+    if (!target?.target) return;
+    camera.position.sub(target.target); // back to looking at the origin
+    target.target.set(0, 0, 0);
+    camera.updateMatrixWorld();
+    const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const x of [FLOOR.x0, FLOOR.x1]) for (const z of [FLOOR.z0, FLOOR.z1]) for (const y of [0, TALL]) {
+      const p = new Vector3(x, y, z);
+      x0 = Math.min(x0, p.dot(right)); x1 = Math.max(x1, p.dot(right)); y0 = Math.min(y0, p.dot(up)); y1 = Math.max(y1, p.dot(up));
+    }
+    const shift = right.multiplyScalar((x0 + x1) / 2).add(up.multiplyScalar((y0 + y1) / 2)); // screen-center of the floor
+    camera.position.add(shift);
+    target.target.copy(shift);
+    camera.zoom = 0.94 * Math.min(size.width / (x1 - x0), size.height / (y1 - y0));
     camera.updateProjectionMatrix();
-  }, [camera, size.width, size.height]);
+    target.update?.();
+  }, [camera, controls, size.width, size.height]);
   return null;
 }
 
@@ -55,15 +72,17 @@ export function Office({ agents, teams, state, now, selected, onSelect }: {
   const lobbyCount = [...places.values()].filter((p) => !p.room).length;
   const debates = Object.values(state.runs).filter((r) => r.live && r.pattern === 'debate');
   const activeDesks = new Set(agents.filter((a) => statusOf(a.id) === 'typing').map((a) => { const d = places.get(a.id)!.desk; return `${d.x},${d.z}`; }));
-  const desks = [...Array.from({ length: ROOMS }, (_, i) => roomDesks(i + 1)).flat(), ...LOBBY_DESKS.slice(0, Math.max(4, Math.min(lobbyCount, LOBBY_DESKS.length)))];
+  const lobbyDesks = Math.max(4, Math.min(lobbyCount, LOBBY_DESKS.length));
+  const desks = useMemo(() => [...Array.from({ length: ROOMS }, (_, i) => roomDesks(i + 1)).flat(), ...LOBBY_DESKS.slice(0, lobbyDesks)], [lobbyDesks]);
+  const grid = useMemo(() => buildGrid(desks), [desks]);
   const rooms = [
     ...Array.from({ length: ROOMS }, (_, i) => {
       const r = teamRoom(i + 1);
       const team = teams.find((t) => t.room === i + 1);
-      return { key: `room${i + 1}`, x: center(r).x, z: r.z1 - 0.35, text: `${i + 1}번 방 · ${team ? team.name : '빈 방'}` };
+      return { key: `room${i + 1}`, x: center(r).x, z: r.z0 + 0.45, text: `${i + 1}번 방 · ${team ? team.name : '빈 방'}` };
     }),
     { key: 'lobby', x: center(LOBBY).x, z: LOBBY.z1 - 0.4, text: '로비' },
-    { key: 'meeting', x: center(MEETING).x, z: MEETING.z0 + 0.5, text: '회의실' },
+    { key: 'meeting', x: center(MEETING).x, z: MEETING.z1 - 0.45, text: '회의실' },
     { key: 'lounge', x: center(LOUNGE).x, z: LOUNGE.z1 - 0.4, text: '휴게실' },
   ];
 
@@ -71,8 +90,8 @@ export function Office({ agents, teams, state, now, selected, onSelect }: {
     <>
       <Canvas shadows onPointerMissed={() => onSelect(null)}>
         <OrthographicCamera makeDefault position={[10, 16, 18]} zoom={36} />
-        <FitZoom />
-        <MapControls enableRotate={false} />
+        <MapControls makeDefault enableRotate={false} />
+        <FitView />
         <ambientLight intensity={0.75} />
         <directionalLight position={[6, 14, 8]} intensity={1.2} castShadow shadow-mapSize={[2048, 2048]}
           shadow-camera-left={-14} shadow-camera-right={14} shadow-camera-top={12} shadow-camera-bottom={-12} />
@@ -88,7 +107,7 @@ export function Office({ agents, teams, state, now, selected, onSelect }: {
           const face = debate ? Math.atan2(center(MEETING).x - goal.x, center(MEETING).z - goal.z) : 0;
           return (
             <Character key={a.id} agent={a} seat={seat} goal={goal} face={face} mode={mode} status={status}
-              selected={selected === a.id} onSelect={onSelect} label={() => labels.current.get(a.id)} positions={positions} />
+              selected={selected === a.id} onSelect={onSelect} label={() => labels.current.get(a.id)} positions={positions} grid={grid} />
           );
         })}
         <Links links={state.links} positions={positions} />
@@ -97,12 +116,15 @@ export function Office({ agents, teams, state, now, selected, onSelect }: {
       {rooms.map((r) => (
         <div key={r.key} className="tag room-tag" ref={(el) => { if (el) labels.current.set(r.key, el); else labels.current.delete(r.key); }}>{r.text}</div>
       ))}
-      {agents.map((a) => (
-        <div key={a.id} className={`tag tag-${statusOf(a.id)}`}
-          ref={(el) => { if (el) labels.current.set(a.id, el); else labels.current.delete(a.id); }}>
-          {a.name} · {LABEL[statusOf(a.id)]}
-        </div>
-      ))}
+      {agents.map((a) => {
+        const s = statusOf(a.id);
+        return (
+          <div key={a.id} className={`tag tag-${s}${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}
+            ref={(el) => { if (el) labels.current.set(a.id, el); else labels.current.delete(a.id); }}>
+            <span aria-hidden>{ICON[s]}</span> {a.name}{s !== 'idle' && <small> {LABEL[s]}</small>}
+          </div>
+        );
+      })}
     </>
   );
 }
