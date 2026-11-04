@@ -1,10 +1,16 @@
 {
   "name": "agentview",
   "private": true,
-  "engines": { "node": ">=22.18" },
-  "workspaces": ["server", "web"],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "test": "npm test --workspaces",
-    "typecheck": "npm run typecheck --workspaces"
+    "typecheck": "npm run typecheck --workspaces",
+    "db": "docker start agentview-db || docker run -d --name agentview-db -p 127.0.0.1:5433:5432 -e POSTGRES_USER=agentview -e POSTGRES_PASSWORD=agentview -e POSTGRES_DB=agentview -v agentview-pg:/var/lib/postgresql/data postgres:17-alpine"
   }
 }

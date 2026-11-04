@@ -1,6 +1,7 @@
 import path from 'node:path';
 import Fastify, { type FastifyReply } from 'fastify';
-import { createBus, RUN_ID, type Ev } from './events.ts';
+import type { Db } from './db.ts';
+import { createBus, RUN_ID, summarizeRun, type Ev } from './events.ts';
 import { createMcp, MCP_NAME, parseConfig, type Mcp, type McpConfig } from './mcp.ts';
 import { startRun, type AgUiMessage, type Deps } from './runner.ts';
 import { listFiles, readFile, removeContainer, runInSandbox, workspaceDir } from './sandbox.ts';
@@ -61,7 +62,7 @@ function sse(reply: FastifyReply) {
   return (id: string, e: Ev) => { reply.raw.write(`id: ${id}\ndata: ${JSON.stringify(e)}\n\n`); };
 }
 
-export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; removeSandbox?: (agentId: string) => Promise<void>; mcp?: Mcp }) {
+export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; removeSandbox?: (agentId: string) => Promise<void>; mcp?: Mcp; db?: Db | null }) {
   const app = Fastify();
   const bus = createBus(path.join(opts.dataDir, 'runs'));
   const running = new Map<string, AbortController>();
@@ -176,6 +177,25 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
   app.get('/models', async () =>
     (await loadConnections(opts.dataDir)).map(({ id, baseURL, defaultModel, maxTokens }) => ({ id, baseURL, defaultModel, maxTokens })));
 
+  // ponytail: model lists cached 10 minutes per connection; add a refresh button if gateways change often
+  const modelCache = new Map<string, { at: number; ids: string[] }>();
+  app.get('/models/:id/available', { schema: { params: idParams } }, async (req, reply) => {
+    const c = (await loadConnections(opts.dataDir)).find((x) => x.id === (req.params as { id: string }).id);
+    if (!c) return reply.code(404).send({ error: 'connection not found' });
+    const hit = modelCache.get(c.id);
+    if (hit && Date.now() - hit.at < 600_000) return hit.ids;
+    const key = process.env[c.apiKeyEnv];
+    try {
+      const res = await fetch(`${c.baseURL.replace(/\/$/, '')}/models`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const ids = ((await res.json()).data as { id: string }[]).map((m) => m.id).sort();
+      modelCache.set(c.id, { at: Date.now(), ids });
+      return ids;
+    } catch (e) {
+      return reply.code(502).send({ error: `could not list models: ${(e as Error).message}` }); // never echo the key
+    }
+  });
+
   app.get('/tools', async () => [
     ...listTools().map((t) => ({ ...t, server: null })),
     ...mcp.list().flatMap((s) => s.tools.map((t) => ({ ...t, server: s.name }))),
@@ -227,17 +247,32 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
           threadId: { type: 'string', pattern: ID },
           runId: { type: 'string', pattern: ID },
           messages: { type: 'array', maxItems: 500, items: { type: 'object', required: ['role'], properties: { role: { enum: ['user', 'assistant', 'system', 'developer', 'tool'] } } } },
-          forwardedProps: { type: 'object', required: ['target'], properties: { target: { type: 'string', pattern: TARGET } } },
+          forwardedProps: { type: 'object', required: ['target'], properties: {
+            target: { type: 'string', pattern: TARGET },
+            model: { type: 'string', pattern: '^[A-Za-z0-9._:/@-]{1,100}$' }, // this run only, for every agent taking part
+          } },
         },
       },
     },
   }, async (req, reply) => {
-    const body = req.body as { threadId: string; runId: string; messages: AgUiMessage[]; forwardedProps: { target: string } };
+    const body = req.body as { threadId: string; runId: string; messages: AgUiMessage[]; forwardedProps: { target: string; model?: string } };
     if (bus.exists(body.runId)) return reply.code(409).send({ error: 'runId already used' });
-    const target = body.forwardedProps.target;
+    const { target, model } = body.forwardedProps;
     const defs = await resolve(opts.dataDir, target).catch(() => null);
     if (!defs) return reply.code(404).send({ error: `${target} not found, or one of its members is missing` });
+    if (model) for (const [id, a] of defs.agents) defs.agents.set(id, { ...a, model });
     const team = target.startsWith('team:') ? defs.teams.get(target.slice('team:'.length)) : undefined;
+
+    // The thread is the session: remember its user message now and the outcome when the run ends.
+    const db = opts.db;
+    if (db) {
+      const first = body.messages.find((m) => m.role === 'user');
+      const session = await db.touch(body.threadId, target, typeof first?.content === 'string' ? first.content : '');
+      if (session.target !== target) return reply.code(409).send({ error: `session ${body.threadId} belongs to ${session.target}` });
+      const last = body.messages.at(-1);
+      if (last?.role === 'user') await db.add(body.threadId, { runId: body.runId, role: 'user', content: typeof last.content === 'string' ? last.content : JSON.stringify(last.content), model: model ?? null });
+    }
+
     const ac = new AbortController();
     running.set(body.runId, ac);
     const write = sse(reply);
@@ -245,7 +280,33 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     reply.raw.on('close', off); // the run keeps going if the client disconnects
     const timeout = AbortSignal.timeout(team ? team.limits.timeoutSec * 1000 : RUN_TIMEOUT_MS);
     void startRun({ ...body, target, defs }, deps, (e) => bus.emit(body.runId, e), AbortSignal.any([ac.signal, timeout]))
+      .then(async () => {
+        if (!db) return;
+        const evs = bus.history(body.runId);
+        const steps = summarizeRun(evs);
+        const end = evs.at(-1);
+        const usedModel = model ?? defs.agents.get(team ? team.main : target.slice('agent:'.length))?.model ?? null;
+        if (steps.length) await db.add(body.threadId, { runId: body.runId, role: 'activity', content: JSON.stringify(steps), model: null });
+        if (end?.type === 'RUN_FINISHED') await db.add(body.threadId, { runId: body.runId, role: 'assistant', content: String(end.result ?? ''), model: usedModel || null });
+        else if (end) await db.add(body.threadId, { runId: body.runId, role: 'error', content: String(end.message ?? 'error'), model: null });
+      })
+      .catch((e) => app.log.error(e))
       .finally(() => running.delete(body.runId));
+  });
+
+  const noDb = (reply: FastifyReply) => reply.code(503).send({ error: 'sessions need the database (npm run db)' });
+
+  app.get('/sessions', { schema: { querystring: { type: 'object', properties: { target: { type: 'string', pattern: TARGET } } } } }, async (req, reply) =>
+    opts.db ? opts.db.list((req.query as { target?: string }).target) : noDb(reply));
+
+  app.get('/sessions/:id', { schema: { params: idParams } }, async (req, reply) => {
+    if (!opts.db) return noDb(reply);
+    return (await opts.db.get((req.params as { id: string }).id)) ?? reply.code(404).send({ error: 'session not found' });
+  });
+
+  app.delete('/sessions/:id', { schema: { params: idParams } }, async (req, reply) => {
+    if (!opts.db) return noDb(reply);
+    return (await opts.db.remove((req.params as { id: string }).id)) ? reply.code(204).send() : reply.code(404).send({ error: 'session not found' });
   });
 
   app.get('/runs', async () => bus.list());
