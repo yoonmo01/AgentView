@@ -15,7 +15,7 @@ export function Roster({ agents, teams, state, now, target, onPick }: {
       <button className="roster-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <b>AgentView</b> <small>{busy ? `${busy}명 작업 중` : '모두 대기 중'}</small> <span aria-hidden>{open ? '▴' : '▾'}</span>
       </button>
-      {open && (
+      <div className={`fold${open ? ' open' : ''}`} inert={!open}>
         <ul className="rows">
           <li className="rows-sep">에이전트</li>
           {agents.map((a) => (
@@ -37,11 +37,13 @@ export function Roster({ agents, teams, state, now, target, onPick }: {
                   {shown === t.id ? '▾' : '▸'}
                 </button>
               </li>
-              {shown === t.id && <li><TeamMembers team={t} agents={agents} teams={teams} state={state} now={now} /></li>}
+              <li className={`fold${shown === t.id ? ' open' : ''}`} inert={shown !== t.id}>
+                <div><TeamMembers team={t} agents={agents} teams={teams} state={state} now={now} /></div>
+              </li>
             </Fragment>
           ))}
         </ul>
-      )}
+      </div>
     </nav>
   );
 }
