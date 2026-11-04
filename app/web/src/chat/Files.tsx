@@ -13,8 +13,8 @@ export function Files({ agentId, refresh }: { agentId: string; refresh: unknown 
     fetch(`/api/agents/${agentId}/files/${p.split('/').map(encodeURIComponent).join('/')}`)
       .then((r) => r.text()).then((text) => setOpen({ path: p, text }));
   // the empty states fill the panel too, so the composer stays at the bottom
-  if (!files) return <div className="files-view"><p className="muted">불러오는 중…</p></div>;
-  if (!files.length) return <div className="files-view empty"><p className="muted">작업 폴더가 비어 있어요. 에이전트가 파일을 만들면 여기에 보여요.</p></div>;
+  if (!files) return <div className="files-view empty"><p className="empty-note">불러오는 중…</p></div>;
+  if (!files.length) return <div className="files-view empty"><p className="empty-note">작업 폴더가 비어 있어요. 에이전트가 파일을 만들면 여기에 보여요.</p></div>;
   return (
     <div className="files-view">
       <ul className="files">

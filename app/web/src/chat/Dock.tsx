@@ -225,8 +225,8 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
         {team && <div className="team-strip"><TeamMembers team={team} agents={agents} teams={teams} state={state} now={Date.now()} /></div>}
         {view === 'files' && agent ? <Files agentId={agent.id} refresh={lines.length} /> : (
           <div className="log" ref={log} aria-live="polite">
-            {!target && <p className="muted">오피스에서 캐릭터나 팀 방을 눌러 대화 상대를 고르세요.</p>}
-            {target && !lines.length && !live && <p className="muted">{sessionId ? '불러오는 중…' : `${name}에게 첫 메시지를 보내 보세요.`}</p>}
+            {!target && <p className="empty-note">오피스에서 캐릭터나 팀 방을 눌러 대화 상대를 고르세요.</p>}
+            {target && !lines.length && !live && <p className="empty-note">{sessionId ? '불러오는 중…' : `${name}에게 첫 메시지를 보내 보세요.`}</p>}
             {lines.map((l) => l.role === 'activity' ? <Activity key={l.key} steps={l.steps ?? []} /> : (
               <div key={l.key} className={`msg msg-${l.role}`}>
                 <div className="text">{l.text}</div>
