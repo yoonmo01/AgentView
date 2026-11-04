@@ -1,0 +1,21 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: system-ui, sans-serif; background: #f4f1ea; color: #222; }
+.app { display: grid; grid-template-columns: 1fr 280px; height: 100%; }
+.stage { position: relative; min-height: 0; }
+.side { border-left: 1px solid #ddd; padding: 16px; overflow: auto; background: #fff; }
+.side ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.side button { width: 100%; text-align: left; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; }
+.side button[aria-pressed='true'] { border-color: #f0b400; background: #fff8e1; }
+.side button:focus-visible { outline: 2px solid #4a90e2; outline-offset: 2px; }
+.stage .tag { position: absolute; top: 0; left: 0; pointer-events: none; }
+.tag { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); border: 1px solid #ccc; font-size: 12px; white-space: nowrap; }
+.tag-thinking, .tag-typing, .tag-reading { border-color: #4a90e2; }
+.tag-queued { border-color: #f0b400; }
+.tag-error { border-color: #e04848; color: #b00; }
+.tag-done { border-color: #3aa76d; }
+.error { color: #b00; }
+@media (max-width: 700px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .side { border-left: 0; border-top: 1px solid #ddd; max-height: 40vh; }
+}
