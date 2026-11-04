@@ -63,14 +63,16 @@ function Anchor({ x, z, el }: { x: number; z: number; el: () => HTMLDivElement |
   return null;
 }
 
-export function Office({ agents, teams, state, now, selected, onSelect, onSelectTeam }: {
-  agents: AgentDef[]; teams: TeamDef[]; state: OfficeState; now: number; selected: string | null;
+export function Office({ agents, teams, state, now, selected, selectedTeam, onSelect, onSelectTeam }: {
+  agents: AgentDef[]; teams: TeamDef[]; state: OfficeState; now: number; selected: string | null; selectedTeam?: string | null;
   onSelect: (id: string | null) => void; onSelectTeam?: (teamId: string) => void;
 }) {
   const labels = useRef(new Map<string, HTMLDivElement>());
   const positions = useRef(new Map<string, Vector3>()).current;
   const places = useMemo(() => placeAgents(agents, teams), [agents, teams]);
   const statusOf = (id: string) => displayStatus(state.agents[id], now);
+  const picked = teams.find((t) => t.id === selectedTeam);
+  const ringOf = (id: string) => selected === id ? '#f0b400' : picked && (picked.main === id || picked.members.includes(id)) ? picked.color || '#26231f' : null;
   const lobbyCount = [...places.values()].filter((p) => !p.room).length;
   const debates = Object.values(state.runs).filter((r) => r.live && r.pattern === 'debate');
   const activeDesks = new Set(agents.filter((a) => statusOf(a.id) === 'typing').map((a) => { const d = places.get(a.id)!.desk; return `${d.x},${d.z}`; }));
@@ -81,11 +83,11 @@ export function Office({ agents, teams, state, now, selected, onSelect, onSelect
     ...Array.from({ length: ROOMS }, (_, i) => {
       const r = teamRoom(i + 1);
       const team = teams.find((t) => t.room === i + 1);
-      return { key: `room${i + 1}`, x: center(r).x, z: r.z0 + 0.45, text: `${i + 1}번 방 · ${team ? team.name : '빈 방'}`, team: team?.id };
+      return { key: `room${i + 1}`, x: center(r).x, z: r.z0 + 0.45, text: `${i + 1}번 방 · ${team ? team.name : '빈 방'}`, team: team?.id, color: team?.color };
     }),
-    { key: 'lobby', x: center(LOBBY).x, z: LOBBY.z1 - 0.4, text: '로비', team: undefined },
-    { key: 'meeting', x: center(MEETING).x, z: MEETING.z1 - 0.45, text: '회의실', team: undefined },
-    { key: 'lounge', x: center(LOUNGE).x, z: LOUNGE.z1 - 0.4, text: '휴게실', team: undefined },
+    { key: 'lobby', x: center(LOBBY).x, z: LOBBY.z1 - 0.4, text: '로비', team: undefined, color: undefined },
+    { key: 'meeting', x: center(MEETING).x, z: MEETING.z1 - 0.45, text: '회의실', team: undefined, color: undefined },
+    { key: 'lounge', x: center(LOUNGE).x, z: LOUNGE.z1 - 0.4, text: '휴게실', team: undefined, color: undefined },
   ];
   const ref = (key: string) => (el: HTMLElement | null) => { if (el) labels.current.set(key, el as HTMLDivElement); else labels.current.delete(key); };
 
@@ -110,14 +112,14 @@ export function Office({ agents, teams, state, now, selected, onSelect, onSelect
           const face = debate ? Math.atan2(center(MEETING).x - goal.x, center(MEETING).z - goal.z) : 0;
           return (
             <Character key={a.id} agent={a} seat={seat} goal={goal} face={face} mode={mode} status={status}
-              selected={selected === a.id} onSelect={onSelect} label={() => labels.current.get(a.id)} positions={positions} grid={grid} />
+              ring={ringOf(a.id)} onSelect={onSelect} label={() => labels.current.get(a.id)} positions={positions} grid={grid} />
           );
         })}
         <Links links={state.links} positions={positions} />
         {rooms.map((r) => <Anchor key={r.key} x={r.x} z={r.z} el={() => labels.current.get(r.key)} />)}
       </Canvas>
       {rooms.map((r) => r.team && onSelectTeam
-        ? <button key={r.key} className="tag room-tag clickable" ref={ref(r.key)} onClick={() => onSelectTeam(r.team!)} title="이 팀과 대화">{r.text}</button>
+        ? <button key={r.key} className="tag room-tag clickable" ref={ref(r.key)} style={{ background: r.color || undefined }} onClick={() => onSelectTeam(r.team!)} title="이 팀과 대화">{r.text}</button>
         : <div key={r.key} className="tag room-tag" ref={ref(r.key)}>{r.text}</div>)}
       {agents.map((a) => {
         const s = statusOf(a.id);

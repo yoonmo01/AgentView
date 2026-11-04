@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { assignRoom, checkTeam, listAgents, loadAgent, openaiChat, resolve, teamWithDefaults, type Team } from '../src/store.ts';
+import { assignColor, assignRoom, TEAM_COLORS, checkTeam, listAgents, loadAgent, openaiChat, resolve, teamWithDefaults, type Team } from '../src/store.ts';
 
 const t = (id: string, main: string, members: string[], room: number | null = null): Team =>
   teamWithDefaults({ pattern: 'parallel', main, members, room }, id);
@@ -25,6 +25,13 @@ describe('teams', () => {
     expect(assignRoom(t('new', 'atlas', ['nova']), others)).toBe(2);
     expect(assignRoom(t('y', 'atlas', ['nova']), others)).toBe(3);
     expect(assignRoom(t('new', 'atlas', ['nova']), [1, 2, 3, 4].map((r) => t(`t${r}`, 'atlas', ['nova'], r)))).toBeNull();
+  });
+
+  it('keeps a given or previous color, else takes an unused one', () => {
+    const others = [{ ...t('x', 'atlas', ['nova']), color: TEAM_COLORS[0] }];
+    expect(assignColor(t('new', 'atlas', ['nova']), others)).toBe(TEAM_COLORS[1]);
+    expect(assignColor(t('x', 'atlas', ['nova']), others)).toBe(TEAM_COLORS[0]);
+    expect(assignColor({ ...t('new', 'atlas', ['nova']), color: '#123456' }, others)).toBe('#123456');
   });
 
   it('resolves a team target into a snapshot with every member and their teams', async () => {

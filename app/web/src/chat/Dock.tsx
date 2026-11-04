@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { summarizeRun } from '../../../server/src/summary.ts';
 import { api, PATTERN_LABEL, readSse, type AgentDef, type ModelConn, type Session, type SessionMessage, type Step, type TeamDef } from '../api.ts';
 import { describeTool, displayStatus, type AgUiEvent, type OfficeState } from '../office/state.ts';
-import { Avatar, Chip } from '../shell/ui.tsx';
+import { Avatar, Chip, TeamMark, TeamMembers } from '../shell/ui.tsx';
 import { dayGroup, shortTime } from './dates.ts';
 import { Files } from './Files.tsx';
 
@@ -141,7 +141,7 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
   // collapsed: one line of what is happening now, or the last answer, so sending does not need the full panel
   const lastStep = liveSteps.at(-1);
   const lastLine = [...lines].reverse().find((l) => l.role === 'assistant' || l.role === 'error');
-  const preview = live
+  const preview = error ? `오류: ${error}` : live
     ? (lastStep && !lastStep.result ? `${lastStep.who} ${describeTool(lastStep.tool, lastStep.args)}` : liveText.slice(-120) || '생각 중…')
     : lastLine?.text ?? '';
   const composer = (
@@ -169,8 +169,8 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
       <section className="dock collapsed" aria-label="채팅">
         {target && (
           <button className="dock-who" onClick={() => onExpand(true)} title="대화 펼치기">
-            {team ? <span className="square" /> : agent && <Avatar agent={agent} />} {name}
-            {agent && !team && <Chip status={status} />} <span aria-hidden>▴</span>
+            {team ? <TeamMark team={team} /> : agent && <Avatar agent={agent} />} {name}
+            {agent && !team && <Chip status={status} />} <span className="caret" aria-hidden>▴</span>
           </button>
         )}
         {preview && <p className={`dock-last${live ? ' live' : ''}`} title={preview}>{preview}</p>}
@@ -205,7 +205,7 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
       </aside>
       <div className="conversation">
         <header>
-          {team ? <span className="square" /> : agent && <Avatar agent={agent} />}
+          {team ? <TeamMark team={team} /> : agent && <Avatar agent={agent} />}
           <div className="who"><b>{name}</b><small>{team ? `${PATTERN_LABEL[team.pattern]} 팀` : agent?.role}</small></div>
           {agent && !team && <Chip status={status} />}
           {agent && !team && (
@@ -217,6 +217,7 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
           {target && <button className="icon" onClick={() => onSettings(target)} title="설정" aria-label="설정">⚙</button>}
           <button className="icon" onClick={() => onExpand(false)} aria-label="채팅 접기">▾</button>
         </header>
+        {team && <div className="team-strip"><TeamMembers team={team} agents={agents} teams={teams} state={state} now={Date.now()} /></div>}
         {view === 'files' && agent ? <Files agentId={agent.id} refresh={lines.length} /> : (
           <div className="log" ref={log} aria-live="polite">
             {!target && <p className="muted">오피스에서 캐릭터나 팀 방을 눌러 대화 상대를 고르세요.</p>}

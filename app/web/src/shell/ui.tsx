@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
-import type { AgentDef } from '../api.ts';
-import { COLOR, LABEL, type Status } from '../office/state.ts';
+import type { AgentDef, TeamDef } from '../api.ts';
+import { COLOR, displayStatus, LABEL, type OfficeState, type Status } from '../office/state.ts';
 
 /** Status as a colored word: "대기 중", "작업 중"… The same chip everywhere an agent's state shows. */
 export const Chip = ({ status }: { status: Status }) => (
@@ -11,3 +11,29 @@ export const Chip = ({ status }: { status: Status }) => (
 export const Avatar = ({ agent }: { agent: Pick<AgentDef, 'name' | 'avatar'> }) => (
   <span className="avatar" style={{ background: agent.avatar.color }} aria-hidden>{agent.name.slice(0, 1).toUpperCase()}</span>
 );
+
+/** A team's color mark. */
+export const TeamMark = ({ team }: { team?: Pick<TeamDef, 'color'> }) => (
+  <span className="square" style={{ background: team?.color || undefined }} aria-hidden />
+);
+
+/** Who is in a team: the main agent (★) first, then members with their status; a nested team shows as its mark. */
+export function TeamMembers({ team, agents, teams, state, now }: {
+  team: TeamDef; agents: AgentDef[]; teams: TeamDef[]; state: OfficeState; now: number;
+}) {
+  return (
+    <ul className="members">
+      {[team.main, ...team.members].map((m, i) => {
+        const sub = m.startsWith('team:') ? teams.find((t) => `team:${t.id}` === m) : undefined;
+        const a = agents.find((x) => x.id === m);
+        return (
+          <li key={m} title={i === 0 ? (team.pattern === 'debate' ? '사회자' : '메인') : '구성원'}>
+            {sub ? <TeamMark team={sub} /> : a && <Avatar agent={a} />}
+            <span>{i === 0 && '★ '}{sub ? `${sub.name} 팀` : a?.name ?? m}</span>
+            {a && <i className="mini" style={{ background: COLOR[displayStatus(state.agents[a.id], now)] }} />}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

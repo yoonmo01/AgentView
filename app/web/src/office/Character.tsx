@@ -19,8 +19,9 @@ export function placeLabel(el: HTMLElement, x: number, y: number, z: number, cam
 const SPEED = 1.6;
 const SKIN = '#ffe0bd';
 
-export function Character({ agent, seat, goal, face, mode, status, selected, onSelect, label, positions, grid }: {
-  agent: AgentDef; seat: Vec2; goal: Vec2; face: number; mode: Mode; status: Status; selected: boolean;
+export function Character({ agent, seat, goal, face, mode, status, ring, onSelect, label, positions, grid }: {
+  agent: AgentDef; seat: Vec2; goal: Vec2; face: number; mode: Mode; status: Status;
+  /** Ring under the feet: the picked agent, or the members of the picked team in its color. */ ring: string | null;
   onSelect: (id: string) => void; label: () => HTMLDivElement | undefined; positions: Map<string, Vector3>; grid: Grid;
 }) {
   const root = useRef<Group>(null);
@@ -115,10 +116,10 @@ export function Character({ agent, seat, goal, face, mode, status, selected, onS
         <circleGeometry args={[0.3, 32]} />
         <meshBasicMaterial color={COLOR[status]} transparent opacity={status === 'idle' ? 0.35 : 0.75} />
       </mesh>
-      {selected && (
+      {ring && (
         <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]}>
           <ringGeometry args={[0.33, 0.41, 32]} />
-          <meshBasicMaterial color="#f0b400" />
+          <meshBasicMaterial color={ring} />
         </mesh>
       )}
     </group>
