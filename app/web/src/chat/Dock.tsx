@@ -97,7 +97,6 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
     setSessionId(sid);
     setLines((ls) => [...ls, { key: `u-${runId}`, role: 'user', text: content, model: model || null, at: new Date().toISOString() }]);
     setLive({ runId, events: [] });
-    onExpand(true);
     try {
       const res = await fetch('/api/agui', {
         method: 'POST',
@@ -139,17 +138,22 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
 
   const liveSteps = live ? summarizeRun(live.events) : [];
   const liveText = live ? live.events.filter((e) => e.type === 'TEXT_MESSAGE_CONTENT' && !e.subagentRunId).map((e) => e.delta).join('') : '';
+  // collapsed: one line of what is happening now, or the last answer, so sending does not need the full panel
+  const lastStep = liveSteps.at(-1);
+  const lastLine = [...lines].reverse().find((l) => l.role === 'assistant' || l.role === 'error');
+  const preview = live
+    ? (lastStep && !lastStep.result ? `${lastStep.who} ${describeTool(lastStep.tool, lastStep.args)}` : liveText.slice(-120) || '생각 중…')
+    : lastLine?.text ?? '';
   const composer = (
     <form className="composer" onSubmit={send}>
       <textarea rows={expanded ? 2 : 1} value={text} disabled={!target}
         placeholder={target ? `${name}에게 메시지 (Enter 보내기, Shift+Enter 줄바꿈)` : '오피스에서 캐릭터나 팀 방을 눌러 대화 상대를 고르세요'}
-        onFocus={() => target && onExpand(true)}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
       <div className="composer-bar">
-        {expanded && conn && (
+        {conn && (
           <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="모델" title="이 메시지에 쓸 모델">
-            <option value="">기본 모델 ({defaultModel || '연결 기본값'})</option>
+            <option value="">{expanded ? `기본 모델 (${defaultModel || '연결 기본값'})` : defaultModel || '기본 모델'}</option>
             {models.filter((m) => m !== defaultModel).map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         )}
@@ -169,6 +173,7 @@ export function Dock({ target, agents, teams, state, expanded, onExpand, onSetti
             {agent && !team && <Chip status={status} />} <span aria-hidden>▴</span>
           </button>
         )}
+        {preview && <p className={`dock-last${live ? ' live' : ''}`} title={preview}>{preview}</p>}
         {composer}
       </section>
     );

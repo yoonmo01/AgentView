@@ -88,7 +88,7 @@ h2.sub, h3.sub { font-size: 13px; color: var(--muted); margin: 10px 0 2px; }
 /* chat dock */
 .dock { position: absolute; right: 12px; bottom: 12px; z-index: 10; }
 .dock.collapsed { width: min(440px, calc(100% - 24px)); padding: 8px; display: grid; gap: 6px; }
-.dock-who { display: flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 2px 4px; font-weight: 600; text-align: left; }
+.dock-who { width: 100%; display: flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 2px 4px; font-weight: 600; text-align: left; }
 .dock-who span[aria-hidden] { margin-left: auto; color: var(--muted); }
 .dock.open { width: min(740px, calc(100% - 24px)); height: min(540px, calc(100% - 90px)); display: grid; grid-template-columns: 190px 1fr; overflow: hidden; }
 .sessions { border-right: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 0; background: var(--surface); }
@@ -124,7 +124,8 @@ h2.sub, h3.sub { font-size: 13px; color: var(--muted); margin: 10px 0 2px; }
 .dock.open .composer { border-top: 1px solid var(--line); }
 .composer textarea { width: 100%; resize: none; padding: 8px 10px; border: 1px solid #d6cfc2; border-radius: 10px; background: #fff; }
 .composer-bar { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
-.composer-bar select { max-width: 260px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 12px; }
+.dock.collapsed .composer-bar select { max-width: 150px; }
+.composer-bar select { margin-right: auto; max-width: 260px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 12px; }
 .files-view { flex: 1; overflow: auto; padding: 12px; display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-content: start; }
 .files { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; }
 .files button { width: 100%; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
@@ -170,3 +171,5 @@ h2.sub, h3.sub { font-size: 13px; color: var(--muted); margin: 10px 0 2px; }
 .tool-list li:first-child { border-top: 0; }
 .tool-list code { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .tool-list small { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-last { margin: 0 4px; font-size: 12px; color: #555; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.dock-last.live { color: #b5651d; }
