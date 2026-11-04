@@ -1,0 +1,8 @@
+{
+  "name": "개발팀",
+  "pattern": "supervisor",
+  "main": "atlas",
+  "members": ["nova"],
+  "limits": { "maxDepth": 3, "maxCalls": 20, "timeoutSec": 600, "rounds": 2 },
+  "room": 1
+}
