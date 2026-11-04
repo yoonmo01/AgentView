@@ -36,6 +36,12 @@ small { color: #777; }
 .admin aside { display: grid; align-content: start; gap: 8px; }
 .plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 14px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.st-connected { background: #3aa76d; }
+.st-failed { background: #e04848; }
+.st-auth { background: #f0b400; }
+.st-connecting { background: #aaa; }
+.mono { font-family: ui-monospace, monospace; font-size: 13px; }
+.box { background: #f6f6f6; padding: 8px; border-radius: 6px; white-space: pre-wrap; }
 .form { display: grid; gap: 12px; max-width: 760px; }
 .form label { display: grid; gap: 4px; font-size: 14px; }
 .form input:not([type='checkbox']):not([type='color']), .form select, .form textarea { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }

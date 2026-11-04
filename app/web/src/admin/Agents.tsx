@@ -92,16 +92,18 @@ export function Agents() {
               </label>
               <label>최대 단계<input type="number" min={1} max={20} value={form.maxSteps} onChange={(e) => set({ maxSteps: Number(e.target.value) })} /></label>
             </div>
-            <fieldset>
-              <legend>허용 도구</legend>
-              {tools.map((t) => (
-                <label key={t.name} className="check" title={t.description}>
-                  <input type="checkbox" checked={form.tools.includes(t.name)}
-                    onChange={(e) => set({ tools: e.target.checked ? [...form.tools, t.name] : form.tools.filter((x) => x !== t.name) })} />
-                  {t.name}
-                </label>
-              ))}
-            </fieldset>
+            {[...new Set(tools.map((t) => t.server))].map((server) => (
+              <fieldset key={server ?? 'base'}>
+                <legend>{server ? `MCP 도구 · ${server}` : '기본 도구 (샌드박스)'}</legend>
+                {tools.filter((t) => t.server === server).map((t) => (
+                  <label key={t.name} className="check" title={t.description}>
+                    <input type="checkbox" checked={form.tools.includes(t.name)}
+                      onChange={(e) => set({ tools: e.target.checked ? [...form.tools, t.name] : form.tools.filter((x) => x !== t.name) })} />
+                    {server ? t.name.slice(`mcp__${server}__`.length) : t.name}
+                  </label>
+                ))}
+              </fieldset>
+            ))}
             <div className="row">
               <label>샌드박스 이미지
                 <input value={form.sandbox.image} onChange={(e) => set({ sandbox: { ...form.sandbox, image: e.target.value } })} />

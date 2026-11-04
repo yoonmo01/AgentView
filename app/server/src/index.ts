@@ -1,6 +1,7 @@
 import path from 'node:path';
 import Fastify, { type FastifyReply } from 'fastify';
 import { createBus, RUN_ID, type Ev } from './events.ts';
+import { createMcp, MCP_NAME, parseConfig, type Mcp, type McpConfig } from './mcp.ts';
 import { startRun, type AgUiMessage, type Deps } from './runner.ts';
 import { listFiles, readFile, removeContainer, runInSandbox, workspaceDir } from './sandbox.ts';
 import {
@@ -60,15 +61,30 @@ function sse(reply: FastifyReply) {
   return (id: string, e: Ev) => { reply.raw.write(`id: ${id}\ndata: ${JSON.stringify(e)}\n\n`); };
 }
 
-export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; removeSandbox?: (agentId: string) => Promise<void> }) {
+export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; removeSandbox?: (agentId: string) => Promise<void>; mcp?: Mcp }) {
   const app = Fastify();
   const bus = createBus(path.join(opts.dataDir, 'runs'));
   const running = new Map<string, AbortController>();
   const exec: ExecFn = opts.exec ?? ((agent, command, timeoutSec, signal) => runInSandbox(agent, opts.dataDir, command, timeoutSec, signal));
+  const mcp = opts.mcp ?? createMcp(opts.dataDir);
+  void mcp.load(); // servers connect in the background; their status shows on /mcp
+  app.addHook('onClose', async () => { await mcp.closeAll(); });
+
+  async function mcpTool(allowed: string[], name: string, args: string, signal: AbortSignal): Promise<string> {
+    try {
+      if (!allowed.includes(name)) throw new Error(`tool not allowed for this agent: ${name}`);
+      return await mcp.call(name, args, signal);
+    } catch (e) {
+      if (signal.aborted) throw e;
+      return `ERROR: ${(e as Error).message}`;
+    }
+  }
   const deps: Deps = {
     chat: opts.chat,
-    toolDefs,
-    runTool: (agent, name, args, signal) => runTool(agent, name, args, signal, { dataDir: opts.dataDir, exec }),
+    toolDefs: (agent) => [...toolDefs(agent), ...mcp.defs(agent.tools)],
+    runTool: (agent, name, args, signal) => name.startsWith('mcp__')
+      ? mcpTool(agent.tools, name, args, signal)
+      : runTool(agent, name, args, signal, { dataDir: opts.dataDir, exec }),
   };
 
   // Agent definitions hold no secrets (keys stay in env), so the admin screen gets them whole.
@@ -78,7 +94,7 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     const agent = withDefaults(body, id);
     const error = checkAgent(agent, {
       connections: (await loadConnections(opts.dataDir)).map((c) => c.id),
-      tools: listTools().map((t) => t.name),
+      tools: [...listTools().map((t) => t.name), ...agent.tools.filter(mcp.isRegistered)],
     });
     if (error) return reply.code(400).send({ error });
     await saveAgent(opts.dataDir, agent);
@@ -160,7 +176,47 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
   app.get('/models', async () =>
     (await loadConnections(opts.dataDir)).map(({ id, baseURL, defaultModel, maxTokens }) => ({ id, baseURL, defaultModel, maxTokens })));
 
-  app.get('/tools', async () => listTools());
+  app.get('/tools', async () => [
+    ...listTools().map((t) => ({ ...t, server: null })),
+    ...mcp.list().flatMap((s) => s.tools.map((t) => ({ ...t, server: s.name }))),
+  ]);
+
+  app.get('/mcp', async () => mcp.list());
+
+  /** Add one server ({ name, url } / { name, command, ... }) or paste a whole { mcpServers: {...} } block. */
+  app.post('/mcp', { schema: { body: { type: 'object' } } }, async (req, reply) => {
+    const body = req.body as Record<string, unknown>;
+    const entries = body.mcpServers && typeof body.mcpServers === 'object'
+      ? Object.entries(body.mcpServers as Record<string, unknown>)
+      : [[String(body.name ?? ''), body] as [string, unknown]];
+    if (!entries.length) return reply.code(400).send({ error: 'no servers given' });
+    const parsed: (readonly [string, McpConfig])[] = [];
+    for (const [name, raw] of entries) {
+      if (!MCP_NAME.test(name)) return reply.code(400).send({ error: `invalid server name "${name}": lowercase letters, digits and -` });
+      if (mcp.has(name)) return reply.code(409).send({ error: `server ${name} already exists` });
+      const config = parseConfig(raw);
+      if (typeof config === 'string') return reply.code(400).send({ error: `${name}: ${config}` });
+      parsed.push([name, config] as const);
+    }
+    await Promise.all(parsed.map(([name, config]) => mcp.add(name, config)));
+    return reply.code(201).send(mcp.list().filter((s) => parsed.some(([n]) => n === s.name)));
+  });
+
+  const mcpParams = { type: 'object', required: ['name'], properties: { name: { type: 'string', pattern: MCP_NAME.source } } };
+
+  app.delete('/mcp/:name', { schema: { params: mcpParams } }, async (req, reply) => {
+    const { name } = req.params as { name: string };
+    if (!mcp.has(name)) return reply.code(404).send({ error: 'server not found' });
+    await mcp.remove(name);
+    return reply.code(204).send();
+  });
+
+  app.post('/mcp/:name/reconnect', { schema: { params: mcpParams } }, async (req, reply) => {
+    const { name } = req.params as { name: string };
+    if (!mcp.has(name)) return reply.code(404).send({ error: 'server not found' });
+    await mcp.connect(name);
+    return mcp.list().find((s) => s.name === name);
+  });
 
   app.post('/agui', {
     schema: {

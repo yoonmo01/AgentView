@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/index.ts';
+import { createMcp, type Mcp } from '../src/mcp.ts';
 import type { ChatFn } from '../src/store.ts';
+import { memoryTransport } from './mcp.test.ts';
 
 const apps: ReturnType<typeof buildApp>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map((a) => a.close())); });
@@ -12,13 +14,14 @@ afterEach(async () => { await Promise.all(apps.splice(0).map((a) => a.close()));
 const hello: ChatFn = async () => (async function* () { yield { choices: [{ delta: { content: 'hello' } }] }; })();
 
 let dataDir = '';
-async function start(chat: ChatFn = hello) {
+async function start(chat: ChatFn = hello, mcp?: Mcp) {
   dataDir = mkdtempSync(path.join(tmpdir(), 'av-app-'));
   mkdirSync(path.join(dataDir, 'agents'));
   writeFileSync(path.join(dataDir, 'agents', 'nova.json'), JSON.stringify({ name: 'Nova', connection: 'c', model: 'm' }));
   writeFileSync(path.join(dataDir, 'models.json'), JSON.stringify([{ id: 'c', baseURL: 'http://x', apiKeyEnv: 'NOPE', defaultModel: 'm' }]));
   const app = buildApp({
     dataDir, chat, exec: async () => { throw new Error('no docker in this test'); }, removeSandbox: async () => {},
+    mcp: mcp ?? createMcp(dataDir, { cleanup: async () => {} }),
   });
   apps.push(app);
   await app.listen({ host: '127.0.0.1', port: 0 });
@@ -115,6 +118,30 @@ describe('http api', () => {
     expect(evs[1]).toMatchObject({ value: { target: 'team:dev', pattern: 'supervisor', main: 'atlas' } });
     expect(evs.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'hello' });
     expect((await post(url, body('team2', 'team:ghost'))).status).toBe(404);
+  });
+
+  it('adds an MCP server without restart and lets an allowed agent call its tool', async () => {
+    let turn = 0;
+    const chat: ChatFn = async () => (async function* () {
+      if (turn++ === 0) yield { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'mcp__demo__echo', arguments: '{"text":"yo"}' } }] } }] };
+      else yield { choices: [{ delta: { content: 'done' } }] };
+    })();
+    const url = await start(chat, createMcp(mkdtempSync(path.join(tmpdir(), 'av-app-mcp-')), { transport: memoryTransport, cleanup: async () => {} }));
+    const send = (method: string, p: string, payload?: unknown) => fetch(`${url}${p}`, {
+      method, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined,
+    });
+    expect((await send('POST', '/mcp', { name: 'Bad Name', url: 'http://x' })).status).toBe(400);
+    const added = await send('POST', '/mcp', { mcpServers: { demo: { url: 'http://unused/mcp' } } });
+    expect(added.status).toBe(201);
+    expect(await added.json()).toMatchObject([{ name: 'demo', status: 'connected' }]);
+    expect((await (await fetch(`${url}/tools`)).json()).find((t: { server: string }) => t.server === 'demo')).toMatchObject({ name: 'mcp__demo__echo' });
+
+    expect((await send('PUT', '/agents/nova', { name: 'Nova', connection: 'c', tools: ['mcp__demo__echo'] })).status).toBe(200);
+    expect((await send('PUT', '/agents/nova', { name: 'Nova', connection: 'c', tools: ['mcp__ghost__x'] })).status).toBe(400);
+    const evs = sseEvents(await (await post(url, body('mcp1'))).text());
+    expect(evs.find((e) => e.type === 'TOOL_CALL_RESULT')).toMatchObject({ content: 'echo: yo' });
+    expect((await send('DELETE', '/mcp/demo')).status).toBe(204);
+    expect(await (await fetch(`${url}/mcp`)).json()).toEqual([]);
   });
 
   it('serves workspace files, models and tools', async () => {

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Agents } from './Agents.tsx';
+import { Mcp } from './Mcp.tsx';
 import { Teams } from './Teams.tsx';
 
-const TABS = { agents: '에이전트', teams: '팀' } as const;
+const TABS = { agents: '에이전트', teams: '팀', mcp: 'MCP' } as const;
 type Tab = keyof typeof TABS;
 
 export function Admin() {
@@ -15,7 +16,7 @@ export function Admin() {
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{TABS[k]}</button>
         ))}
       </div>
-      {tab === 'agents' ? <Agents /> : <Teams />}
+      {tab === 'agents' ? <Agents /> : tab === 'teams' ? <Teams /> : <Mcp />}
     </div>
   );
 }
