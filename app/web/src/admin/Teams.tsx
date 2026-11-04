@@ -51,7 +51,7 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
       const saved = await api<TeamDef>(isNew ? '/teams' : `/teams/${form.id}`, { method: isNew ? 'POST' : 'PUT', body: form });
       setForm(saved);
       setIsNew(false);
-      setMsg({ text: saved.room ? `저장했어요. ${saved.room}번 방을 배정했어요.` : '저장했어요. 빈 방이 없어서 구성원은 로비에 앉아요.' });
+      setMsg({ text: '저장했어요. 오피스의 팀 방도 구성에 맞게 바뀌어요.' });
       await reload();
       onChanged?.();
     } catch (err) { fail(err); }
@@ -75,7 +75,7 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
           {teams.map((t) => (
             <li key={t.id}>
               <button aria-pressed={form?.id === t.id && !isNew} onClick={() => open(t)}>
-                <TeamMark team={t} /><span className="row-text"><b>{t.name}</b><small>{PATTERN_LABEL[t.pattern]} · {t.room ? `${t.room}번 방` : '로비'}</small></span>
+                <TeamMark team={t} /><span className="row-text"><b>{t.name}</b><small>{PATTERN_LABEL[t.pattern]} · {t.members.length + 1}명</small></span>
               </button>
             </li>
           ))}
@@ -87,7 +87,7 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
         {msg && <p className={msg.error ? 'error' : 'ok'} role="status">{msg.text}</p>}
         {!form ? <p>왼쪽에서 팀을 고르거나 새로 만드세요.</p> : (
           <form onSubmit={save} className="form">
-            <h2>{isNew ? '새 팀' : `${form.name}${form.room ? ` · ${form.room}번 방` : ''}`}</h2>
+            <h2>{isNew ? '새 팀' : form.name}</h2>
             <label>ID (영문 소문자·숫자·-)
               <input required pattern="[a-z0-9][a-z0-9\-]{0,40}" value={form.id} disabled={!isNew} onChange={(e) => set({ id: e.target.value })} />
             </label>

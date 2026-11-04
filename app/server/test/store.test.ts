@@ -20,11 +20,11 @@ describe('teams', () => {
     expect(checkTeam(t('a', 'atlas', ['team:a']), agents, teams)).toMatch('cycle');
   });
 
-  it('keeps a room, takes the lowest free one, or none when full', () => {
+  it('keeps a room, takes the lowest free one, with no limit', () => {
     const others = [t('x', 'atlas', ['nova'], 1), t('y', 'atlas', ['nova'], 3)];
     expect(assignRoom(t('new', 'atlas', ['nova']), others)).toBe(2);
     expect(assignRoom(t('y', 'atlas', ['nova']), others)).toBe(3);
-    expect(assignRoom(t('new', 'atlas', ['nova']), [1, 2, 3, 4].map((r) => t(`t${r}`, 'atlas', ['nova'], r)))).toBeNull();
+    expect(assignRoom(t('new', 'atlas', ['nova']), [1, 2, 3, 4].map((r) => t(`t${r}`, 'atlas', ['nova'], r)))).toBe(5);
   });
 
   it('keeps a given or previous color, else takes an unused one', () => {

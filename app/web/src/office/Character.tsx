@@ -2,7 +2,7 @@ import { useFrame, type Camera } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { Vector3, type Group } from 'three';
 import type { AgentDef } from '../api.ts';
-import { LOUNGE_SPOTS, type Vec2 } from './layout.ts';
+import type { Vec2 } from './layout.ts';
 import { findPath, isFree, type Grid } from './nav.ts';
 import { COLOR, type Status } from './state.ts';
 
@@ -21,8 +21,8 @@ export function placeLabel(el: HTMLElement, x: number, y: number, z: number, cam
 const SPEED = 1.6;
 const SKIN = '#ffe0bd';
 
-export function Character({ agent, seat, goal, face, mode, status, ring, onSelect, label, positions, grid }: {
-  agent: AgentDef; seat: Vec2; goal: Vec2; face: number; mode: Mode; status: Status;
+export function Character({ agent, seat, goal, face, mode, status, ring, lounge: spots, onSelect, label, positions, grid }: {
+  agent: AgentDef; seat: Vec2; goal: Vec2; face: number; mode: Mode; status: Status; lounge: Vec2[];
   /** Ring under the feet: the picked agent, or the members of the picked team in its color. */ ring: string | null;
   onSelect: (id: string) => void; label: () => HTMLDivElement | undefined; positions: Map<string, Vector3>; grid: Grid;
 }) {
@@ -45,7 +45,7 @@ export function Character({ agent, seat, goal, face, mode, status, ring, onSelec
     if (mode === 'idle') {
       // decoration only: stroll near the desk or visit the lounge, never a work animation
       if (t > wander.current.until) {
-        const lounge = Math.random() < 0.3 ? LOUNGE_SPOTS[Math.floor(Math.random() * LOUNGE_SPOTS.length)] : null;
+        const lounge = Math.random() < 0.3 ? spots[Math.floor(Math.random() * spots.length)] : null;
         let p = lounge ?? seat;
         for (let n = 0; !lounge && n < 8; n++) { // a free spot near the desk
           const q = { x: seat.x + (Math.random() - 0.5) * 3, z: seat.z + (Math.random() - 0.5) * 3 };
