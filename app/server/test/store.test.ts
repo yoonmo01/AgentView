@@ -2,7 +2,43 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { listAgents, loadAgent, openaiChat } from '../src/store.ts';
+import { assignRoom, checkTeam, listAgents, loadAgent, openaiChat, resolve, teamWithDefaults, type Team } from '../src/store.ts';
+
+const t = (id: string, main: string, members: string[], room: number | null = null): Team =>
+  teamWithDefaults({ pattern: 'parallel', main, members, room }, id);
+
+describe('teams', () => {
+  const agents = new Set(['atlas', 'nova', 'milo']);
+  it('checks references, self-membership and nesting cycles', () => {
+    const b = t('b', 'atlas', ['nova', 'team:a']);
+    const teams = new Map([['b', b]]);
+    expect(checkTeam(t('a', 'atlas', ['nova']), agents, teams)).toBeNull();
+    expect(checkTeam(t('a', 'ghost', ['nova']), agents, teams)).toMatch('unknown main');
+    expect(checkTeam(t('a', 'atlas', ['atlas']), agents, teams)).toMatch('main agent cannot');
+    expect(checkTeam(t('a', 'atlas', ['team:zzz']), agents, teams)).toMatch('unknown member');
+    expect(checkTeam(t('a', 'atlas', ['team:b']), agents, teams)).toMatch('cycle'); // a ⊃ b ⊃ a
+    expect(checkTeam(t('a', 'atlas', ['team:a']), agents, teams)).toMatch('cycle');
+  });
+
+  it('keeps a room, takes the lowest free one, or none when full', () => {
+    const others = [t('x', 'atlas', ['nova'], 1), t('y', 'atlas', ['nova'], 3)];
+    expect(assignRoom(t('new', 'atlas', ['nova']), others)).toBe(2);
+    expect(assignRoom(t('y', 'atlas', ['nova']), others)).toBe(3);
+    expect(assignRoom(t('new', 'atlas', ['nova']), [1, 2, 3, 4].map((r) => t(`t${r}`, 'atlas', ['nova'], r)))).toBeNull();
+  });
+
+  it('resolves a team target into a snapshot with every member and their teams', async () => {
+    const dir = dataDir({ 'atlas.json': { name: 'A' }, 'nova.json': { name: 'N' }, 'milo.json': { name: 'M' } });
+    mkdirSync(path.join(dir, 'teams'));
+    writeFileSync(path.join(dir, 'teams', 'outer.json'), JSON.stringify({ pattern: 'supervisor', main: 'atlas', members: ['team:inner'] }));
+    writeFileSync(path.join(dir, 'teams', 'inner.json'), JSON.stringify({ pattern: 'debate', main: 'milo', members: ['nova'] }));
+    const defs = await resolve(dir, 'team:outer');
+    expect([...defs.teams.keys()]).toEqual(['outer', 'inner']);
+    expect([...defs.agents.keys()].sort()).toEqual(['atlas', 'milo', 'nova']);
+    expect(defs.agents.get('nova')!.teams).toEqual(['inner']);
+    expect(defs.teams.get('inner')!.limits.rounds).toBe(2);
+  });
+});
 
 function dataDir(agents: Record<string, unknown> = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'av-store-'));

@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { Agent } from './store.ts';
 
 export const workspaceDir = (dataDir: string, agentId: string) => path.resolve(dataDir, 'workspaces', agentId);
+export const teamspaceDir = (dataDir: string, teamId: string) => path.resolve(dataDir, 'teamspaces', teamId);
 
 const inside = (root: string, p: string) => p === root || p.startsWith(root + path.sep);
 
@@ -65,7 +66,8 @@ async function docker(args: string[]): Promise<string> {
 }
 
 export const containerName = (agentId: string) => `agentview-${agentId}`;
-const configLabel = (a: Agent) => `${a.sandbox.image}|net=${a.sandbox.network}`;
+// joining or leaving a team changes the mounts, so it recreates the container like an image change does
+const configLabel = (a: Agent) => `${a.sandbox.image}|net=${a.sandbox.network}|teams=${(a.teams ?? []).join(',')}`;
 
 /** Create, start or recreate the agent's container. Files live on the host, so recreating is safe. */
 export async function ensureContainer(agent: Agent, dataDir: string): Promise<void> {
@@ -81,11 +83,16 @@ export async function ensureContainer(agent: Agent, dataDir: string): Promise<vo
   }
   const ws = workspaceDir(dataDir, agent.id);
   await mkdir(ws, { recursive: true });
+  const teamMounts: string[] = [];
+  for (const t of agent.teams ?? []) {
+    await mkdir(teamspaceDir(dataDir, t), { recursive: true });
+    teamMounts.push('-v', `${teamspaceDir(dataDir, t)}:/team/${t}`);
+  }
   await docker([
     'run', '-d', '--name', name, '--label', `agentview.config=${configLabel(agent)}`,
     ...(agent.sandbox.network ? [] : ['--network', 'none']),
     '--memory', '1g', '--cpus', '1',
-    '-v', `${ws}:/work`, '-w', '/work',
+    '-v', `${ws}:/work`, ...teamMounts, '-w', '/work',
     agent.sandbox.image, 'tail', '-f', '/dev/null',
   ]);
 }
