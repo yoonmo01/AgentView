@@ -1,5 +1,6 @@
 export type Status = 'idle' | 'thinking' | 'typing' | 'reading' | 'queued' | 'error' | 'done';
-export type AgentView = { status: Status; tool?: string; runId: string; since: number };
+/** `say` is what the agent is visibly doing right now: the tail of its streamed text, or its current action. */
+export type AgentView = { status: Status; tool?: string; runId: string; since: number; say?: string };
 export type RunView = { main: string; pattern: string; agents: string[]; live: boolean; subs: Record<string, string> };
 export type OfficeState = {
   agents: Record<string, AgentView>;
@@ -15,10 +16,33 @@ export const initial: OfficeState = { agents: {}, runs: {}, links: {}, seen: {} 
 export const LABEL: Record<Status, string> = {
   idle: '대기', thinking: '생각 중', typing: '작업 중', reading: '읽는 중', queued: '대기열', error: '오류', done: '완료',
 };
-/** Shown next to the label so status never relies on color alone. */
-export const ICON: Record<Status, string> = {
-  idle: '☕', thinking: '💭', typing: '⌨️', reading: '📖', queued: '⏳', error: '⚠️', done: '✅',
+/** One color per status (floor disc, tag dot, chips); the text label stays alongside for accessibility. */
+export const COLOR: Record<Status, string> = {
+  idle: '#9a958c', thinking: '#3b7ddd', typing: '#e8862a', reading: '#8a5cd6', queued: '#e0b000', error: '#d64545', done: '#2f9a62',
 };
+
+const SAY_MAX = 70;
+const base = (p: unknown) => String(p ?? '').replace(/^\/work\//, '').split('/').pop() || String(p ?? '');
+/**
+ * Human-readable action for a tool call, from its name and (possibly partial) JSON arguments.
+ * `done` gives the past-tense form used in a session's activity list.
+ */
+export function describeTool(name: string, rawArgs: string, done = false): string {
+  let a: Record<string, unknown> = {};
+  try { a = JSON.parse(rawArgs || '{}'); } catch { /* arguments still streaming */ }
+  const file = a.path ? base(a.path) : '파일';
+  switch (name) {
+    case 'sandbox_write_file': return done ? `${file} 작성` : `${file} 쓰는 중`;
+    case 'sandbox_read_file': return done ? `${file} 읽음` : `${file} 읽는 중`;
+    case 'sandbox_list_files': return done ? '파일 목록 확인' : '파일 둘러보는 중';
+    case 'sandbox_run': return a.command ? `실행: ${String(a.command).slice(0, 50)}` : done ? '명령 실행' : '명령 실행 중';
+    case 'delegate': return a.member ? (done ? `${String(a.member)}에게 맡김` : `${String(a.member)}에게 맡기는 중`) : '일 나누는 중';
+    default: {
+      const tool = name.startsWith('mcp__') ? `${name.split('__').pop()} 도구` : name;
+      return done ? `${tool} 사용` : `${tool} 쓰는 중`;
+    }
+  }
+}
 
 const WRITE_TOOLS = new Set(['sandbox_write_file', 'sandbox_run']);
 const SETTLE_MS = 5_000;
@@ -87,7 +111,21 @@ export function apply(s: OfficeState, runId: string, seq: number, e: AgUiEvent, 
     e.type === 'CUSTOM' && e.name === 'agentview.queued' ? e.value.agentId
     : e.subagentRunId ? runs[runId]?.subs[e.subagentRunId]
     : runs[runId]?.main;
-  const next = agentId ? nextStatus(e) : null;
-  if (!agentId || !next) return { ...s, runs, links, seen };
-  return { agents: { ...s.agents, [agentId]: { ...next, runId, since: now } }, runs, links, seen };
+  if (!agentId) return { ...s, runs, links, seen };
+  const cur = s.agents[agentId];
+  // what the agent is visibly doing: streamed text, or its current tool call; it keeps the status it already has
+  if (e.type === 'TEXT_MESSAGE_CONTENT' && cur) {
+    const say = ((cur.say ?? '') + e.delta).replace(/\s+/g, ' ').slice(-SAY_MAX);
+    return { agents: { ...s.agents, [agentId]: { ...cur, say } }, runs, links, seen };
+  }
+  if (e.type === 'TOOL_CALL_ARGS' && cur?.tool) {
+    return { agents: { ...s.agents, [agentId]: { ...cur, say: describeTool(cur.tool, e.delta) } }, runs, links, seen };
+  }
+  const next = nextStatus(e);
+  if (!next) return { ...s, runs, links, seen };
+  const say = e.type === 'TOOL_CALL_START' ? describeTool(e.toolCallName, '')
+    : e.type === 'TEXT_MESSAGE_START' ? ''
+    : e.type === 'CUSTOM' && e.name === 'agentview.queued' ? '다른 일이 끝나길 기다리는 중'
+    : cur?.runId === runId ? cur.say : undefined;
+  return { agents: { ...s.agents, [agentId]: { ...next, runId, since: now, say } }, runs, links, seen };
 }

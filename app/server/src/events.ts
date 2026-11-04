@@ -10,33 +10,7 @@ export const isTerminal = (e: Ev) => TERMINAL.has(e.type);
 
 export type Bus = ReturnType<typeof createBus>;
 
-export type Step = { who: string; tool: string; args: string; result: string; ms: number };
-const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
-
-/** Every tool call of a run, attributed to the agent that made it: the compact activity a session keeps. */
-export function summarizeRun(events: Ev[]): Step[] {
-  let main = '';
-  const subs: Record<string, string> = {};
-  const open = new Map<string, Step & { at: number }>();
-  const out: (Step & { at: number })[] = [];
-  for (const e of events) {
-    if (e.type === 'CUSTOM' && e.name === 'agentview.run_info') main = String((e.value as { main: string }).main);
-    if (e.type === 'SUBAGENT_STARTED') subs[String(e.subagentRunId)] = String(e.name);
-    const who = e.subagentRunId ? subs[String(e.subagentRunId)] ?? '?' : main;
-    if (e.type === 'TOOL_CALL_START') {
-      const s = { who, tool: String(e.toolCallName), args: '', result: '', ms: 0, at: Number(e.timestamp) };
-      open.set(String(e.toolCallId), s);
-      out.push(s);
-    } else if (e.type === 'TOOL_CALL_ARGS') {
-      const s = open.get(String(e.toolCallId));
-      if (s) s.args += String(e.delta);
-    } else if (e.type === 'TOOL_CALL_RESULT') {
-      const s = open.get(String(e.toolCallId));
-      if (s) { s.result = String(e.content); s.ms = Number(e.timestamp) - s.at; }
-    }
-  }
-  return out.map(({ at: _at, ...s }) => ({ ...s, args: cut(s.args, 300), result: cut(s.result, 600) }));
-}
+export { summarizeRun, type Step } from './summary.ts';
 
 export function createBus(dir: string) {
   mkdirSync(dir, { recursive: true });

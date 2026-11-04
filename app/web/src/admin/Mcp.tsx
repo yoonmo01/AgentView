@@ -12,7 +12,7 @@ const STATUS: Record<McpServer['status'], string> = { connecting: '연결 중', 
 type Mode = 'url' | 'command' | 'json';
 const EXAMPLE = '{\n  "mcpServers": {\n    "everything": { "command": "mcp-server-everything", "args": ["stdio"] }\n  }\n}';
 
-export function Mcp() {
+export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [picked, setPicked] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -38,6 +38,7 @@ export function Mcp() {
             env: Object.fromEntries(lines(f.env).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])) };
       const added = await api<McpServer[]>('/mcp', { method: 'POST', body });
       await reload();
+      onChanged?.();
       setAdding(false);
       setPicked(added[0]?.name ?? null);
       const bad = added.filter((s) => s.status !== 'connected');
@@ -54,6 +55,7 @@ export function Mcp() {
       await api(kind === 'delete' ? `/mcp/${current.name}` : `/mcp/${current.name}/reconnect`, { method: kind === 'delete' ? 'DELETE' : 'POST' });
       if (kind === 'delete') setPicked(null);
       await reload();
+      onChanged?.();
     } catch (err) { fail(err); } finally { setBusy(false); }
   }
 

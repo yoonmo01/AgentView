@@ -188,7 +188,10 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     try {
       const res = await fetch(`${c.baseURL.replace(/\/$/, '')}/models`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const ids = ((await res.json()).data as { id: string }[]).map((m) => m.id).sort();
+      // chat models only: BAZE also lists image/video models (type) and some without a chat endpoint; vLLM sends neither field
+      const ids = ((await res.json()).data as { id: string; type?: string; endpoints?: string[]; shutdown_at?: string | null }[])
+        .filter((m) => (!m.type || m.type === 'llm') && (!m.endpoints || m.endpoints.some((e) => e.includes('chat/completions'))) && !m.shutdown_at)
+        .map((m) => m.id).sort();
       modelCache.set(c.id, { at: Date.now(), ids });
       return ids;
     } catch (e) {
@@ -285,7 +288,9 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
         const evs = bus.history(body.runId);
         const steps = summarizeRun(evs);
         const end = evs.at(-1);
-        const usedModel = model ?? defs.agents.get(team ? team.main : target.slice('agent:'.length))?.model ?? null;
+        const mainAgent = defs.agents.get(team ? team.main : target.slice('agent:'.length));
+        const usedModel = model || mainAgent?.model
+          || (await loadConnections(opts.dataDir)).find((c) => c.id === mainAgent?.connection)?.defaultModel || null;
         if (steps.length) await db.add(body.threadId, { runId: body.runId, role: 'activity', content: JSON.stringify(steps), model: null });
         if (end?.type === 'RUN_FINISHED') await db.add(body.threadId, { runId: body.runId, role: 'assistant', content: String(end.result ?? ''), model: usedModel || null });
         else if (end) await db.add(body.threadId, { runId: body.runId, role: 'error', content: String(end.message ?? 'error'), model: null });

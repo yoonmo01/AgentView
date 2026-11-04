@@ -7,7 +7,7 @@ import { Character, placeLabel, type Mode } from './Character.tsx';
 import { Building, DeskSet } from './Furniture.tsx';
 import { center, FLOOR, LOBBY, LOBBY_DESKS, LOUNGE, MEETING, meetingSeat, placeAgents, ROOMS, roomDesks, SEAT, TALL, teamRoom } from './layout.ts';
 import { buildGrid } from './nav.ts';
-import { ICON, LABEL, displayStatus, type OfficeState } from './state.ts';
+import { COLOR, LABEL, displayStatus, type OfficeState } from './state.ts';
 
 const MAX_LINKS = 64;
 
@@ -62,8 +62,9 @@ function Anchor({ x, z, el }: { x: number; z: number; el: () => HTMLDivElement |
   return null;
 }
 
-export function Office({ agents, teams, state, now, selected, onSelect }: {
-  agents: AgentDef[]; teams: TeamDef[]; state: OfficeState; now: number; selected: string | null; onSelect: (id: string | null) => void;
+export function Office({ agents, teams, state, now, selected, onSelect, onSelectTeam }: {
+  agents: AgentDef[]; teams: TeamDef[]; state: OfficeState; now: number; selected: string | null;
+  onSelect: (id: string | null) => void; onSelectTeam?: (teamId: string) => void;
 }) {
   const labels = useRef(new Map<string, HTMLDivElement>());
   const positions = useRef(new Map<string, Vector3>()).current;
@@ -79,12 +80,13 @@ export function Office({ agents, teams, state, now, selected, onSelect }: {
     ...Array.from({ length: ROOMS }, (_, i) => {
       const r = teamRoom(i + 1);
       const team = teams.find((t) => t.room === i + 1);
-      return { key: `room${i + 1}`, x: center(r).x, z: r.z0 + 0.45, text: `${i + 1}번 방 · ${team ? team.name : '빈 방'}` };
+      return { key: `room${i + 1}`, x: center(r).x, z: r.z0 + 0.45, text: `${i + 1}번 방 · ${team ? team.name : '빈 방'}`, team: team?.id };
     }),
-    { key: 'lobby', x: center(LOBBY).x, z: LOBBY.z1 - 0.4, text: '로비' },
-    { key: 'meeting', x: center(MEETING).x, z: MEETING.z1 - 0.45, text: '회의실' },
-    { key: 'lounge', x: center(LOUNGE).x, z: LOUNGE.z1 - 0.4, text: '휴게실' },
+    { key: 'lobby', x: center(LOBBY).x, z: LOBBY.z1 - 0.4, text: '로비', team: undefined },
+    { key: 'meeting', x: center(MEETING).x, z: MEETING.z1 - 0.45, text: '회의실', team: undefined },
+    { key: 'lounge', x: center(LOUNGE).x, z: LOUNGE.z1 - 0.4, text: '휴게실', team: undefined },
   ];
+  const ref = (key: string) => (el: HTMLElement | null) => { if (el) labels.current.set(key, el as HTMLDivElement); else labels.current.delete(key); };
 
   return (
     <>
@@ -113,15 +115,19 @@ export function Office({ agents, teams, state, now, selected, onSelect }: {
         <Links links={state.links} positions={positions} />
         {rooms.map((r) => <Anchor key={r.key} x={r.x} z={r.z} el={() => labels.current.get(r.key)} />)}
       </Canvas>
-      {rooms.map((r) => (
-        <div key={r.key} className="tag room-tag" ref={(el) => { if (el) labels.current.set(r.key, el); else labels.current.delete(r.key); }}>{r.text}</div>
-      ))}
+      {rooms.map((r) => r.team && onSelectTeam
+        ? <button key={r.key} className="tag room-tag clickable" ref={ref(r.key)} onClick={() => onSelectTeam(r.team!)} title="이 팀과 대화">{r.text}</button>
+        : <div key={r.key} className="tag room-tag" ref={ref(r.key)}>{r.text}</div>)}
       {agents.map((a) => {
         const s = statusOf(a.id);
+        const say = s !== 'idle' && s !== 'done' && state.agents[a.id]?.say;
         return (
-          <div key={a.id} className={`tag tag-${s}${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}
-            ref={(el) => { if (el) labels.current.set(a.id, el); else labels.current.delete(a.id); }}>
-            <span aria-hidden>{ICON[s]}</span> {a.name}{s !== 'idle' && <small> {LABEL[s]}</small>}
+          <div key={a.id} className="agent-label" ref={ref(a.id)}>
+            {say && <div className="bubble" style={{ borderColor: COLOR[s] }}>{say}</div>}
+            <div className={`tag${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}>
+              <span className="dot" style={{ background: COLOR[s] }} aria-hidden /> {a.name}
+              {s !== 'idle' && <small> {LABEL[s]}</small>}
+            </div>
           </div>
         );
       })}

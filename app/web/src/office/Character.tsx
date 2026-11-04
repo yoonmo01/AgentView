@@ -4,7 +4,7 @@ import { Vector3, type Group } from 'three';
 import type { AgentDef } from '../api.ts';
 import { LOUNGE_SPOTS, type Vec2 } from './layout.ts';
 import { findPath, isFree, type Grid } from './nav.ts';
-import type { Status } from './state.ts';
+import { COLOR, type Status } from './state.ts';
 
 /** work: at the own desk · meeting: at a meeting-room seat · idle: free to wander. */
 export type Mode = 'work' | 'meeting' | 'idle';
@@ -111,9 +111,13 @@ export function Character({ agent, seat, goal, face, mode, status, selected, onS
         ))}
         <mesh position={[0, 1.13, -0.02]} castShadow><sphereGeometry args={[0.2, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2.2]} /><meshStandardMaterial color="#4a3a2e" /></mesh>
       </group>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.015, 0]}>
+        <circleGeometry args={[0.3, 32]} />
+        <meshBasicMaterial color={COLOR[status]} transparent opacity={status === 'idle' ? 0.35 : 0.75} />
+      </mesh>
       {selected && (
         <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]}>
-          <ringGeometry args={[0.3, 0.37, 32]} />
+          <ringGeometry args={[0.33, 0.41, 32]} />
           <meshBasicMaterial color="#f0b400" />
         </mesh>
       )}
