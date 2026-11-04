@@ -15,7 +15,8 @@ small { color: #777; }
 .nav a[aria-current='page'] { background: #f0b400; color: #222; }
 
 .app { display: grid; grid-template-columns: 1fr 340px; flex: 1; min-height: 0; }
-.stage { position: relative; min-height: 0; }
+.stage { position: relative; min-height: 0; overflow: hidden; }
+.app > *, .chat-page > *, .admin > * { min-width: 0; } /* let the canvas shrink with the grid track */
 .side { border-left: 1px solid #ddd; padding: 16px; overflow: auto; background: #fff; }
 .side ul, .list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .side button, .list button { width: 100%; text-align: left; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
@@ -40,6 +41,24 @@ small { color: #777; }
 .actions { display: flex; gap: 8px; }
 .primary { background: #f0b400; border: 0; border-radius: 8px; padding: 8px 14px; }
 .danger { background: #fff; border: 1px solid #e04848; color: #b00; border-radius: 8px; padding: 8px 14px; }
+
+.panel { margin-top: 16px; border-top: 1px solid #eee; padding-top: 8px; font-size: 14px; }
+.panel h3 { margin: 4px 0; }
+.tabs { display: flex; gap: 4px; margin: 8px 0; }
+.side .tabs button { width: auto; padding: 4px 10px; }
+.tabs [aria-selected='true'] { background: #2b2b2b; color: #fff; border-color: #2b2b2b; }
+.runpick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.timeline, .files { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.tl-run { color: #666; font-size: 12px; }
+.tl-text { white-space: pre-wrap; background: #f6f6f6; padding: 6px 8px; border-radius: 6px; }
+.tl-tool summary { cursor: pointer; color: #2a5db0; }
+.panel pre { white-space: pre-wrap; word-break: break-all; background: #1f1f1f; color: #eee; padding: 6px 8px; border-radius: 6px; max-height: 240px; overflow: auto; font-size: 12px; margin: 2px 0 6px; }
+.files li { display: flex; gap: 6px; align-items: center; }
+.side .files button { padding: 4px 8px; font-family: ui-monospace, monospace; font-size: 12px; }
+.badge { font-size: 11px; background: #e3f4ea; color: #1d7a46; border-radius: 999px; padding: 1px 6px; white-space: nowrap; }
+.settings dt { font-weight: 600; margin-top: 6px; }
+.settings dd { margin: 0; }
+.settings .prompt { white-space: pre-wrap; color: #555; }
 
 .chat-page { display: grid; grid-template-columns: minmax(320px, 440px) 1fr; flex: 1; min-height: 0; }
 .chat { display: grid; grid-template-rows: auto 1fr auto; gap: 8px; padding: 12px; background: #fff; border-right: 1px solid #ddd; min-height: 0; }
