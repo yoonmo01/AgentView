@@ -5,6 +5,7 @@ import { describeTool, displayStatus, type AgUiEvent, type OfficeState } from '.
 import { Avatar, Chip, TeamMark, TeamMembers } from '../shell/ui.tsx';
 import { dayGroup, shortTime } from './dates.ts';
 import { Files } from './Files.tsx';
+import { ModelPicker } from './ModelPicker.tsx';
 import { ask } from '../shell/ask.ts';
 
 type Line = { key: string; role: SessionMessage['role']; text: string; steps?: Step[]; model?: string | null; at?: string };
@@ -142,9 +143,10 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
   // collapsed: one line of what is happening now, or the last answer, so sending does not need the full panel
   const lastStep = liveSteps.at(-1);
   const lastLine = [...lines].reverse().find((l) => l.role === 'assistant' || l.role === 'error');
-  const preview = error ? `오류: ${error}` : live
-    ? (lastStep && !lastStep.result ? `${lastStep.who} ${describeTool(lastStep.tool, lastStep.args)}` : liveText.slice(-120) || '생각 중…')
-    : lastLine?.text ?? '';
+  const preview: { kind: 'live' | 'error' | 'last'; head: string; text: string } | null = error ? { kind: 'error', head: '오류', text: error }
+    : live ? { kind: 'live', head: '진행 중', text: lastStep && !lastStep.result ? `${lastStep.who} ${describeTool(lastStep.tool, lastStep.args)}` : liveText.slice(-160) || '생각 중…' }
+    : lastLine ? { kind: lastLine.role === 'error' ? 'error' : 'last', head: ['마지막 답', lastLine.at && shortTime(lastLine.at)].filter(Boolean).join(' · '), text: lastLine.text }
+    : null;
   const composer = (
     <form className="composer" onSubmit={send}>
       <textarea rows={expanded ? 2 : 1} value={text} disabled={!target}
@@ -153,10 +155,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
       <div className="composer-bar">
         {conn && (
-          <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="모델" title="이 메시지에 쓸 모델">
-            <option value="">{expanded ? `기본 모델 (${defaultModel || '연결 기본값'})` : defaultModel || '기본 모델'}</option>
-            {models.filter((m) => m !== defaultModel).map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
+          <ModelPicker value={model} models={models} defaultModel={defaultModel} compact={!expanded} onChange={setModel} />
         )}
         {live
           ? <button type="button" className="danger" onClick={() => void fetch(`/api/runs/${live.runId}/cancel`, { method: 'POST' })}>취소</button>
@@ -174,7 +173,12 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
             {agent && !team && <Chip status={status} />} <span className="caret" aria-hidden>▴</span>
           </button>
         )}
-        {preview && <p className={`dock-last${live ? ' live' : ''}`} title={preview}>{preview}</p>}
+        {preview && (
+          <div className={`dock-last ${preview.kind}`} title={preview.text}>
+            <small>{preview.head}</small>
+            <p>{preview.text}</p>
+          </div>
+        )}
         {composer}
       </section>
     );
