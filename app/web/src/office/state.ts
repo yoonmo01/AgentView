@@ -13,12 +13,13 @@ export type OfficeState = {
 export type AgUiEvent = { type: string; [key: string]: any };
 
 export const initial: OfficeState = { agents: {}, runs: {}, links: {}, seen: {} };
+/** What people see: thinking, writing and reading are all "작업 중"; the bubble says what exactly. */
 export const LABEL: Record<Status, string> = {
-  idle: '대기', thinking: '생각 중', typing: '작업 중', reading: '읽는 중', queued: '대기열', error: '오류', done: '완료',
+  idle: '대기 중', thinking: '작업 중', typing: '작업 중', reading: '작업 중', queued: '대기열', error: '오류', done: '완료',
 };
-/** One color per status (floor disc, tag dot, chips); the text label stays alongside for accessibility. */
+/** One color per visible status (floor disc, chips); the text label always goes with it. */
 export const COLOR: Record<Status, string> = {
-  idle: '#9a958c', thinking: '#3b7ddd', typing: '#e8862a', reading: '#8a5cd6', queued: '#e0b000', error: '#d64545', done: '#2f9a62',
+  idle: '#2f9a62', thinking: '#e8862a', typing: '#e8862a', reading: '#e8862a', queued: '#d9a400', error: '#d64545', done: '#3b7ddd',
 };
 
 const SAY_MAX = 70;
