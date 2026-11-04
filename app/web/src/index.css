@@ -77,8 +77,10 @@ h2.sub, h3.sub { font-size: 13px; color: var(--muted); margin: 10px 0 2px; }
 .drawer .admin aside h2 { margin: 0; }
 
 /* office labels */
-.screen .tag, .agent-label { position: absolute; top: 0; left: 0; }
-.agent-label { pointer-events: none; z-index: 1; }
+.screen > .tag, .agent-label { position: absolute; top: 0; left: 0; }
+.agent-label { pointer-events: none; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.agent-label .chip { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.agent-label .tag { font-weight: 600; }
 .screen > .tag, .agent-label { transform: translate(-9999px, -9999px); } /* hidden until the first frame places it */
 .tag { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.95); border: 1px solid #d8d2c6; font-size: 12px; white-space: nowrap; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); display: inline-flex; align-items: center; gap: 5px; pointer-events: none; }
 .tag small { font-size: 11px; }

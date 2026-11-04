@@ -41,7 +41,7 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
   const open = (t: TeamDef | null) => { setForm(t ?? { ...EMPTY, main: agents[0]?.id ?? '' }); setIsNew(!t); setMsg(null); };
   const candidates = form ? [
     ...agents.filter((a) => a.id !== form.main).map((a) => ({ value: a.id, label: a.name, note: a.role, mark: <Avatar agent={a} /> })),
-    ...teams.filter((t) => t.id !== form.id).map((t) => ({ value: `team:${t.id}`, label: `${t.name} 팀`, note: PATTERN_LABEL[t.pattern], mark: <TeamMark team={t} /> })),
+    // ponytail: teams inside teams stay possible on the server but are hidden here until that feature is designed
   ] : [];
 
   async function save(e: FormEvent) {

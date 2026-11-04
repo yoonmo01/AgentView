@@ -127,9 +127,8 @@ export function Office({ agents, teams, state, now, selected, selectedTeam, onSe
         return (
           <div key={a.id} className="agent-label" ref={ref(a.id)}>
             {say && <div className="bubble" style={{ borderColor: COLOR[s] }}>{say}</div>}
-            <div className={`tag${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}>
-              {a.name} <Chip status={s} />
-            </div>
+            <Chip status={s} />
+            <div className={`tag${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}>{a.name}</div>
           </div>
         );
       })}
