@@ -48,7 +48,7 @@ export const WALLS: Wall[] = [
   ...door(MEETING.x0, MEETING.x1, MEETING.z1),
 ];
 
-/** Shared-room furniture. `solid: false` props (chairs, rugs, things on a counter) do not block walking. */
+/** Shared-room furniture. `solid: false` props (rugs, things on a counter) do not block walking. */
 export type Prop = { name: string; x: number; z: number; y?: number; rot?: number; size: [number, number, number]; color?: string; solid?: boolean };
 const meet = center(MEETING);
 const PLANT = { name: 'pottedPlant', size: [0.5, 1, 0.5] as [number, number, number], color: '#5c8a4d' };
@@ -60,7 +60,7 @@ export const PROPS: Prop[] = [
   { name: 'tableRound', x: meet.x, z: meet.z, size: [1.4, 0.75, 1.6] },
   ...Array.from({ length: MEETING_SEATS }, (_, i): Prop => {
     const s = meetingSeat(i);
-    return { name: 'chair', x: s.x, z: s.z, rot: Math.atan2(meet.x - s.x, meet.z - s.z), size: [0.4, 0.9, 0.4], solid: false };
+    return { name: 'chair', x: s.x, z: s.z, rot: Math.atan2(meet.x - s.x, meet.z - s.z), size: [0.4, 0.9, 0.4] };
   }),
   { name: 'rugRound', x: 4.5, y: 0.01, z: 4.8, size: [2.4, 0.02, 2.4], color: '#c9b8e0', solid: false },
   { name: 'loungeSofa', x: 4.5, z: 3.7, size: [2, 0.9, 0.85], color: '#7d9ac2' },
@@ -75,6 +75,8 @@ export const PROPS: Prop[] = [
 ];
 /** Desk footprint (width along x, depth along z), shared by the scene and the walking grid. */
 export const DESK_SIZE = { w: 1.44, d: 0.9 };
+/** Desk chair: centered this far behind the desk center (toward -z), and its footprint. */
+export const DESK_CHAIR = { z: -SEAT - 0.1, size: 0.6 };
 
 export type Placement = { desk: Vec2; room: number | null };
 

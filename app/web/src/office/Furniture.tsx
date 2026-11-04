@@ -2,7 +2,7 @@ import { useGLTF } from '@react-three/drei';
 import { Component, Suspense, useMemo, type ReactNode } from 'react';
 import { Box3, Vector3, type Mesh } from 'three';
 import type { TeamDef } from '../api.ts';
-import { center, DESK_SIZE, FLOOR, LOBBY, LOUNGE, MEETING, PROPS, ROOMS, SEAT, TALL, teamRoom, WALL_T, WALLS, type Rect, type Vec2 } from './layout.ts';
+import { center, DESK_CHAIR, DESK_SIZE, FLOOR, LOBBY, LOUNGE, MEETING, PROPS, ROOMS, TALL, teamRoom, WALL_T, WALLS, type Rect, type Vec2 } from './layout.ts';
 
 // Kenney Furniture Kit (CC0), installed separately into public/models/furniture (see README).
 const BASE = '/models/furniture/kenney_furniture-kit/Models/GLTF format/';
@@ -56,7 +56,7 @@ export function DeskSet({ at, active }: { at: Vec2; active: boolean }) {
         <meshStandardMaterial color="#1b1f2a" emissive={active ? '#58a6ff' : '#000000'} emissiveIntensity={active ? 1.2 : 0} />
       </mesh>
       <Model name="computerKeyboard" at={[0, DESK_H, -0.2]} rot={Math.PI} size={[0.5, 0.04, 0.2]} color="#444444" />
-      <Model name="chairDesk" at={[0, 0, -SEAT - 0.1]} size={[0.6, 0.85, 0.6]} color="#555555" />
+      <Model name="chairDesk" at={[0, 0, DESK_CHAIR.z]} size={[DESK_CHAIR.size, 0.85, DESK_CHAIR.size]} color="#555555" />
     </group>
   );
 }
