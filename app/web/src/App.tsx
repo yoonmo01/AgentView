@@ -29,7 +29,8 @@ export default function App() {
   }, []);
 
   // one panel on the right at a time: the chat and the settings drawer never overlap
-  const pick = (t: string) => { setTarget(t); setChatOpen(true); setSettings(null); };
+  // picking only changes who the chat talks to; the chat opens and closes with its own button
+  const pick = (t: string) => { setTarget(t); setSettings(null); };
   const openSettings = (s: typeof settings) => { setSettings(s); if (s) setChatOpen(false); };
   const selected = target?.startsWith('agent:') ? target.slice('agent:'.length) : null;
 
