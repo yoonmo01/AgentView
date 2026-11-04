@@ -5,7 +5,8 @@ import { BufferAttribute, BufferGeometry, Vector3 } from 'three';
 import type { AgentDef, TeamDef } from '../api.ts';
 import { Character, placeLabel, type Mode } from './Character.tsx';
 import { Building, DeskSet } from './Furniture.tsx';
-import { assignLobby, center, FLOOR, LOBBY, LOBBY_DESKS, LOUNGE, MEETING, meetingSeat, ROOMS, roomDesks, SEAT, TALL, teamRoom, teamSeats, WAIT_SPOTS, type Vec2 } from './layout.ts';
+import { PATTERN_LABEL } from '../api.ts';
+import { assignLobby, buildFloor, center, seatAt, TALL, type Rect, type Seat } from './layout.ts';
 import { buildGrid } from './nav.ts';
 import { Chip } from '../shell/ui.tsx';
 import { COLOR, LABEL, displayStatus, type OfficeState } from './state.ts';
@@ -32,7 +33,7 @@ function Links({ links, positions }: { links: OfficeState['links']; positions: M
 }
 
 /** Center and fit the whole floor (with its tall walls) whenever the canvas size changes; the user can still pan and zoom. */
-function FitView() {
+function FitView({ b }: { b: Rect }) {
   const { camera, size, controls } = useThree();
   useEffect(() => {
     const target = (controls as unknown as { target?: Vector3; update?: () => void } | null);
@@ -43,7 +44,7 @@ function FitView() {
     const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
     const up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const x of [FLOOR.x0, FLOOR.x1]) for (const z of [FLOOR.z0, FLOOR.z1]) for (const y of [0, TALL]) {
+    for (const x of [b.x0, b.x1]) for (const z of [b.z0, b.z1]) for (const y of [0, TALL]) {
       const p = new Vector3(x, y, z);
       x0 = Math.min(x0, p.dot(right)); x1 = Math.max(x1, p.dot(right)); y0 = Math.min(y0, p.dot(up)); y1 = Math.max(y1, p.dot(up));
     }
@@ -53,7 +54,7 @@ function FitView() {
     camera.zoom = 0.94 * Math.min(size.width / (x1 - x0), size.height / (y1 - y0));
     camera.updateProjectionMatrix();
     target.update?.();
-  }, [camera, controls, size.width, size.height]);
+  }, [camera, controls, size.width, size.height, b.x0, b.x1, b.z0, b.z1]);
   return null;
 }
 
@@ -69,35 +70,31 @@ export function Office({ agents, teams, state, now, selected, selectedTeam, onSe
 }) {
   const labels = useRef(new Map<string, HTMLDivElement>());
   const positions = useRef(new Map<string, Vector3>()).current;
-  const seats = useMemo(() => teamSeats(agents, teams), [agents, teams]);
+  const floor = useMemo(() => buildFloor(teams, agents), [teams, agents]);
+  const grid = useMemo(() => buildGrid(floor), [floor]);
+  const roomOf = useMemo(() => new Map(floor.rooms.map((r) => [r.team.id, r])), [floor]);
   const statusOf = (id: string) => displayStatus(state.agents[id], now);
-  // where each agent works: its own desk in the room of the team it is working for, else a shared lobby desk
-  const teamDesk = (id: string): Vec2 | undefined => {
+  // where each agent works: its own seat in the room of the team it is working for, else a shared lobby desk
+  const teamSeat = (id: string): { seat: Seat; main: boolean } | undefined => {
     const run = state.runs[state.agents[id]?.runId ?? ''];
     const ids = [run?.target?.startsWith('team:') ? run.target.slice('team:'.length) : '', ...(run?.teams ?? [])];
-    for (const t of ids) { const d = seats.get(t)?.get(id); if (d) return d; }
+    for (const t of ids) { const r = roomOf.get(t); const seat = r?.seats.get(id); if (seat) return { seat, main: r!.team.main === id }; }
   };
   const picked = teams.find((t) => t.id === selectedTeam);
   const ringOf = (id: string) => selected === id ? '#f0b400' : picked && (picked.main === id || picked.members.includes(id)) ? picked.color || '#26231f' : null;
-  const debates = Object.values(state.runs).filter((r) => r.live && r.pattern === 'debate');
-  const busy = agents.filter((a) => statusOf(a.id) !== 'idle' && !debates.some((r) => r.agents.includes(a.id)));
+  const busy = agents.filter((a) => statusOf(a.id) !== 'idle');
   const lobby = useRef(new Map<string, number>());
-  lobby.current = assignLobby(lobby.current, busy.filter((a) => !teamDesk(a.id)).map((a) => a.id));
-  const waiting = busy.filter((a) => !teamDesk(a.id) && !lobby.current.has(a.id)).map((a) => a.id);
-  /** desk an agent works at now, or undefined while it waits for a lobby desk */
-  const deskOf = (id: string) => teamDesk(id) ?? (lobby.current.has(id) ? LOBBY_DESKS[lobby.current.get(id)!] : undefined);
-  const activeDesks = new Set(agents.filter((a) => statusOf(a.id) === 'typing').map((a) => { const d = deskOf(a.id); return d ? `${d.x},${d.z}` : ''; }));
-  const desks = useMemo(() => [...Array.from({ length: ROOMS }, (_, i) => roomDesks(i + 1)).flat(), ...LOBBY_DESKS], []);
-  const grid = useMemo(() => buildGrid(desks), [desks]);
+  lobby.current = assignLobby(lobby.current, busy.filter((a) => !teamSeat(a.id)).map((a) => a.id), floor.lobbyDesks.length);
+  const waiting = busy.filter((a) => !teamSeat(a.id) && !lobby.current.has(a.id)).map((a) => a.id);
+  /** the seat an agent works at now, or undefined while it waits for a lobby desk */
+  const seatOf = (id: string): Seat | undefined => teamSeat(id)?.seat ?? (lobby.current.has(id) ? seatAt(floor.lobbyDesks[lobby.current.get(id)!]) : undefined);
+  const activeDesks = new Set(agents.filter((a) => statusOf(a.id) === 'typing').map((a) => seatOf(a.id)?.desk));
+  const desks = [...floor.lobbyDesks, ...floor.rooms.flatMap((r) => r.desks)];
   const rooms = [
-    ...Array.from({ length: ROOMS }, (_, i) => {
-      const r = teamRoom(i + 1);
-      const team = teams.find((t) => t.room === i + 1);
-      return { key: `room${i + 1}`, x: center(r).x, z: r.z0 + 0.45, text: `${i + 1}번 방 · ${team ? team.name : '빈 방'}`, team: team?.id, color: team?.color };
-    }),
-    { key: 'lobby', x: center(LOBBY).x, z: LOBBY.z1 - 0.4, text: '로비', team: undefined, color: undefined },
-    { key: 'meeting', x: center(MEETING).x, z: MEETING.z1 - 0.45, text: '회의실', team: undefined, color: undefined },
-    { key: 'lounge', x: center(LOUNGE).x, z: LOUNGE.z1 - 0.4, text: '휴게실', team: undefined, color: undefined },
+    ...floor.rooms.map((r) => ({ key: `room-${r.team.id}`, x: center(r.rect).x, z: r.rect.z1 - 0.35, text: `${r.team.name} · ${PATTERN_LABEL[r.team.pattern]}`, team: r.team.id, color: r.team.color })),
+    { key: 'lobby', x: center(floor.lobby).x, z: floor.lobby.z1 - 0.4, text: '로비', team: undefined, color: undefined },
+    { key: 'meeting', x: center(floor.meeting).x, z: floor.meeting.z1 - 0.45, text: '회의실', team: undefined, color: undefined },
+    { key: 'lounge', x: center(floor.lounge).x, z: floor.lounge.z1 - 0.4, text: '휴게실', team: undefined, color: undefined },
   ];
   const ref = (key: string) => (el: HTMLElement | null) => { if (el) labels.current.set(key, el as HTMLDivElement); else labels.current.delete(key); };
 
@@ -106,25 +103,21 @@ export function Office({ agents, teams, state, now, selected, selectedTeam, onSe
       <Canvas shadows onPointerMissed={() => onSelect(null)}>
         <OrthographicCamera makeDefault position={[10, 16, 18]} zoom={36} />
         <MapControls makeDefault enableRotate={false} />
-        <FitView />
+        <FitView b={floor.bounds} />
         <ambientLight intensity={0.75} />
         <directionalLight position={[6, 14, 8]} intensity={1.2} castShadow shadow-mapSize={[2048, 2048]}
-          shadow-camera-left={-14} shadow-camera-right={14} shadow-camera-top={12} shadow-camera-bottom={-12} />
-        <Building teams={teams} />
-        {desks.map((d) => <DeskSet key={`${d.x},${d.z}`} at={d} active={activeDesks.has(`${d.x},${d.z}`)} />)}
+          shadow-camera-left={floor.bounds.x0 - 3} shadow-camera-right={floor.bounds.x1 + 3} shadow-camera-top={14} shadow-camera-bottom={-14} />
+        <Building floor={floor} />
+        {desks.map((d) => <DeskSet key={`${d.x},${d.z}`} desk={d} active={activeDesks.has(d)} />)}
         {agents.map((a) => {
-          const i = agents.indexOf(a);
-          const home = { x: LOBBY_DESKS[i % LOBBY_DESKS.length].x, z: LOBBY_DESKS[i % LOBBY_DESKS.length].z - SEAT }; // where idle strolls start
-          const debate = debates.find((r) => r.agents.includes(a.id));
+          const home = seatAt(floor.lobbyDesks[agents.indexOf(a) % floor.lobbyDesks.length]); // where idle strolls start
           const status = statusOf(a.id);
-          const desk = deskOf(a.id);
-          const mode: Mode = debate ? 'meeting' : status === 'idle' ? 'idle' : desk ? 'work' : 'wait';
-          const goal = debate ? meetingSeat(debate.agents.indexOf(a.id))
-            : desk ? { x: desk.x, z: desk.z - SEAT }
-            : status === 'idle' ? home : WAIT_SPOTS[Math.max(0, waiting.indexOf(a.id)) % WAIT_SPOTS.length];
-          const face = debate ? Math.atan2(center(MEETING).x - goal.x, center(MEETING).z - goal.z) : 0;
+          const seat = status === 'idle' ? undefined : seatOf(a.id);
+          const mode: Mode = status === 'idle' ? 'idle' : seat ? 'work' : 'wait';
+          const goal = seat ?? (status === 'idle' ? home : floor.waitSpots[Math.max(0, waiting.indexOf(a.id)) % floor.waitSpots.length]);
+          const face = seat?.face ?? 0;
           return (
-            <Character key={a.id} agent={a} seat={home} goal={goal} face={face} mode={mode} status={status}
+            <Character key={a.id} agent={a} seat={home} goal={goal} face={face} mode={mode} status={status} lounge={floor.loungeSpots}
               ring={ringOf(a.id)} onSelect={onSelect} label={() => labels.current.get(a.id)} positions={positions} grid={grid} />
           );
         })}
@@ -141,7 +134,7 @@ export function Office({ agents, teams, state, now, selected, selectedTeam, onSe
           <div key={a.id} className="agent-label" ref={ref(a.id)}>
             {say && <div className="bubble" style={{ borderColor: COLOR[s] }}>{say}</div>}
             <Chip status={s} />
-            <div className={`tag${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}>{a.name}</div>
+            <div className={`tag${selected === a.id ? ' tag-selected' : ''}`} title={`${a.name} · ${LABEL[s]}`}>{s !== 'idle' && teamSeat(a.id)?.main && '★ '}{a.name}</div>
           </div>
         );
       })}

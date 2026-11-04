@@ -27,12 +27,11 @@ export type Team = {
   /** Agent ids, or `team:<id>` for a nested team. */
   members: string[];
   limits: { maxDepth: number; maxCalls: number; timeoutSec: number; rounds: number };
-  /** Office room 1..ROOMS, assigned by the server; null when every room is taken. */
+  /** Order of the team's room in the office (1, 2, …), assigned by the server; rooms are sized by the web from the members. */
   room: number | null;
   /** Team color (#rrggbb) for its room, label and members; picked by the server when not given. */
   color: string;
 };
-export const ROOMS = 4;
 /** Team colors that do not look like a status color (green, orange, yellow, blue, red). */
 export const TEAM_COLORS = ['#8a5cd6', '#1aa3a3', '#d6589c', '#3f51b5', '#9c6b3f', '#7a8f2a', '#5d6d7e', '#6d4c8f'];
 
@@ -127,13 +126,14 @@ export function checkTeam(t: Team, agents: Set<string>, teams: Map<string, Team>
   return t.members.some((m) => { const n = nested(m); return n !== null && reaches(n); }) ? 'team nesting would form a cycle' : null;
 }
 
-/** Keep the team's room, else take the lowest free one, else none (members sit in the lobby). */
-export function assignRoom(t: Team, others: Team[]): number | null {
+/** Keep the team's room number, else take the lowest free one. There is no limit: the office widens. */
+export function assignRoom(t: Team, others: Team[]): number {
   const own = others.find((o) => o.id === t.id)?.room;
   if (own) return own;
   const used = new Set(others.filter((o) => o.id !== t.id).map((o) => o.room));
-  for (let r = 1; r <= ROOMS; r++) if (!used.has(r)) return r;
-  return null;
+  let r = 1;
+  while (used.has(r)) r++;
+  return r;
 }
 
 /** The color given, else the team's previous one, else the first color no other team uses. */
