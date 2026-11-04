@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type AgentDef } from './api.ts';
+import { api, type AgentDef, type TeamDef } from './api.ts';
 import { Office } from './office/Office.tsx';
 import { LABEL, displayStatus } from './office/state.ts';
 import { useOffice } from './office/useOffice.ts';
@@ -9,12 +9,14 @@ export default function App() {
   const runId = new URLSearchParams(location.search).get('run');
   const state = useOffice(runId);
   const [agents, setAgents] = useState<AgentDef[]>([]);
+  const [teams, setTeams] = useState<TeamDef[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     api<AgentDef[]>('/agents').then(setAgents).catch(() => setError('서버에 연결할 수 없어요. server가 실행 중인지 확인하세요.'));
+    api<TeamDef[]>('/teams').then(setTeams).catch(() => {});
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -23,7 +25,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="stage">
-        <Office agents={agents} state={state} now={now} selected={selected} onSelect={setSelected} />
+        <Office agents={agents} teams={teams} state={state} now={now} selected={selected} onSelect={setSelected} />
       </div>
       <aside className="side">
         <h2>{runId ? `실행 다시 보기: ${runId}` : '에이전트'}</h2>

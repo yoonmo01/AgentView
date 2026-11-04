@@ -23,6 +23,7 @@ small { color: #777; }
 .side button[aria-pressed='true'], .list button[aria-pressed='true'] { border-color: #f0b400; background: #fff8e1; }
 .stage .tag { position: absolute; top: 0; left: 0; pointer-events: none; }
 .tag { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); border: 1px solid #ccc; font-size: 12px; white-space: nowrap; }
+.room-tag { background: rgba(43, 43, 43, 0.75); color: #fff; border-color: transparent; font-size: 11px; }
 .tag-thinking, .tag-typing, .tag-reading { border-color: #4a90e2; }
 .tag-queued { border-color: #f0b400; }
 .tag-error { border-color: #e04848; color: #b00; }

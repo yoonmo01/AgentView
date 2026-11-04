@@ -97,7 +97,7 @@ export function Chat() {
         </form>
       </section>
       <div className="stage">
-        <Office agents={agents} state={state} now={now} selected={null} onSelect={() => {}} />
+        <Office agents={agents} teams={teams} state={state} now={now} selected={null} onSelect={() => {}} />
       </div>
     </div>
   );
