@@ -18,7 +18,7 @@ export type Agent = {
   teams?: string[];
 };
 
-export type Pattern = 'supervisor' | 'parallel' | 'debate';
+export type Pattern = 'supervisor' | 'parallel' | 'debate' | 'pipeline' | 'review' | 'vote';
 export type Team = {
   id: string;
   name: string;

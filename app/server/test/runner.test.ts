@@ -219,6 +219,41 @@ describe('runner', () => {
     expect(seen.at(-1)!.messages.at(-1)!.content).toContain('사회자');
   });
 
+  it('pipeline: members work in order on the previous result, then the main finishes', async () => {
+    const seen: ChatRequest[] = [];
+    const evs = await runTeam(byAgent({}, seen), [team('line', 'pipeline', 'atlas', ['nova', 'milo'])]);
+    expect(subs(evs).map((e) => e.name)).toEqual(['nova', 'milo']);
+    expect(seen[1].messages.at(-1)!.content).toContain('nova: ok'); // milo gets nova's result
+    expect(seen[2].messages.at(-1)!.content).toContain('milo: ok'); // the finisher gets the last step
+    expect(evs.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'atlas: ok' });
+  });
+
+  it('review: the work is redone with the feedback until the reviewer passes it, and the work is the answer', async () => {
+    const seen: ChatRequest[] = [];
+    const chat = byAgent({ atlas: [text('수정 필요\n제목을 넣어'), text('통과\n좋아요')], nova: [text('초안'), text('제목 있는 글')] }, seen);
+    const evs = await runTeam(chat, [team('rev', 'review', 'atlas', ['nova'], { rounds: 3 })]);
+    expect(evs.filter((e) => e.name === 'agentview.review').map((e) => e.value)).toEqual([{ round: 1, passed: false }, { round: 2, passed: true }]);
+    expect(seen[2].messages.at(-1)!.content).toContain('제목을 넣어'); // nova sees the feedback
+    expect(evs.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: '제목 있는 글' });
+  });
+
+  it('review: stops at the round limit with the latest version', async () => {
+    const chat = byAgent({ atlas: [text('수정 필요'), text('수정 필요')], nova: [text('v1'), text('v2')] });
+    const evs = await runTeam(chat, [team('rev', 'review', 'atlas', ['nova'], { rounds: 2 })]);
+    expect(evs.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'v2' });
+  });
+
+  it('vote: everyone answers alone, then the judge decides from all answers', async () => {
+    const seen: ChatRequest[] = [];
+    const evs = await runTeam(byAgent({}, seen), [team('jury', 'vote', 'atlas', ['nova', 'milo'])]);
+    const judge = seen.at(-1)!;
+    expect(judge.messages[0].content).toBe('atlas');
+    expect(judge.messages.at(-1)!.content).toContain('nova: ok');
+    expect(judge.messages.at(-1)!.content).toContain('심판');
+    expect(seen.filter((r) => r.messages[0].content !== 'atlas').every((r) => !String(r.messages.at(-1)!.content).includes(': ok'))).toBe(true); // no one sees another answer
+    expect(evs.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'atlas: ok' });
+  });
+
   it('nested team: the inner main runs as its own subagent and the same agent on both levels takes turns', async () => {
     const evs = await runTeam(byAgent({}), [team('outer', 'parallel', 'atlas', ['team:inner']), team('inner', 'parallel', 'atlas', ['nova'])]);
     const [inner, ...rest] = subs(evs);

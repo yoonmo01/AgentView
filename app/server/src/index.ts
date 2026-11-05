@@ -43,7 +43,7 @@ const TEAM_BODY = {
   properties: {
     id: { type: 'string', pattern: AGENT_ID.source },
     name: { type: 'string', minLength: 1, maxLength: 60 },
-    pattern: { enum: ['supervisor', 'parallel', 'debate'] },
+    pattern: { enum: ['supervisor', 'parallel', 'debate', 'pipeline', 'review', 'vote'] },
     main: { type: 'string', pattern: AGENT_ID.source },
     members: { type: 'array', minItems: 1, maxItems: 20, uniqueItems: true, items: { type: 'string', pattern: '^(team:)?[a-z0-9][a-z0-9-]{0,40}$' } },
     limits: { type: 'object', additionalProperties: false, properties: {

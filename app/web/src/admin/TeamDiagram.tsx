@@ -2,6 +2,14 @@ import type { AgentDef, TeamDef } from '../api.ts';
 
 type Node = { id: string; x: number; y: number; main?: boolean };
 const W = 480;
+const CAPTION: Record<TeamDef['pattern'], string> = {
+  supervisor: '팀장이 일을 나눠 맡기고(실선) 결과를 돌려받아요(점선).',
+  parallel: '모두 같은 요청을 동시에 받아 각자 역할을 하고, 메인이 결과를 합쳐요.',
+  debate: '사회자부터 시계방향으로 발언하고(실선), 사회자가 결론을 정리해요(점선).',
+  pipeline: '왼쪽부터 차례로 일하고 결과를 다음 사람에게 넘겨요. 마지막에 메인이 최종 답을 써요.',
+  review: '구성원이 결과물을 검토자에게 내고(실선), 통과할 때까지 수정 요청을 받아 고쳐요(점선).',
+  vote: '모두 같은 문제를 서로 보지 않고 각자 풀고, 심판이 가장 좋은 답을 골라요.',
+};
 const R = 15;
 
 /**
@@ -28,7 +36,13 @@ export function TeamDiagram({ team, agents }: { team: TeamDef; agents: AgentDef[
     if (speakers.length > 2 && team.limits.rounds > 1) arrows.push([speakers.at(-1)!, speakers[0]]);
     arrows.push(...nodes.slice(1).map((n) => [n, nodes[0], true] as [Node, Node, boolean]));
     H = 160;
-  } else if (team.pattern === 'parallel') {
+  } else if (team.pattern === 'pipeline') {
+    // work order left to right, ending at the finisher
+    const line = spread(members.length + 1, 70).map((p, i) => ({ id: i < members.length ? members[i] : team.main, ...p, main: i === members.length }));
+    nodes = line;
+    arrows = line.slice(0, -1).map((n, i) => [n, line[i + 1]] as [Node, Node]);
+    H = 120;
+  } else if (team.pattern === 'parallel' || team.pattern === 'vote') {
     const req = { id: '', x: W / 2, y: 18 };
     const row = spread(members.length, 75).map((p, i) => ({ id: members[i], ...p }));
     const main = { id: team.main, x: W / 2, y: 132, main: true };
@@ -39,7 +53,10 @@ export function TeamDiagram({ team, agents }: { team: TeamDef; agents: AgentDef[
     const main = { id: team.main, x: W / 2, y: 30, main: true };
     const row = spread(members.length, 112).map((p, i) => ({ id: members[i], ...p }));
     nodes = [main, ...row];
-    arrows = row.flatMap((n) => [[main, n] as [Node, Node], [n, main, true] as [Node, Node, boolean]]);
+    // supervisor: the lead hands work down (solid), results come back (dashed); review: work goes up for review (solid), fixes come back (dashed)
+    arrows = row.flatMap((n) => team.pattern === 'review'
+      ? [[n, main] as [Node, Node], [main, n, true] as [Node, Node, boolean]]
+      : [[main, n] as [Node, Node], [n, main, true] as [Node, Node, boolean]]);
   }
   const who = (id: string) => agents.find((a) => a.id === id);
   // trim each arrow to the circle edges, and bow the return arrow so the pair does not overlap
@@ -47,7 +64,7 @@ export function TeamDiagram({ team, agents }: { team: TeamDef; agents: AgentDef[
     const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
     const ra = a.id === '' ? 4 : R + 3, rb = R + 5;
     const p = { x: a.x + (dx / d) * ra, y: a.y + (dy / d) * ra }, q = { x: b.x - (dx / d) * rb, y: b.y - (dy / d) * rb };
-    const bow = team.pattern === 'supervisor' ? (dashed ? 10 : -10) : 0;
+    const bow = team.pattern === 'supervisor' || team.pattern === 'review' ? (dashed ? 10 : -10) : 0;
     const m = { x: (p.x + q.x) / 2 - (dy / d) * bow, y: (p.y + q.y) / 2 + (dx / d) * bow };
     return `M${p.x},${p.y} Q${m.x},${m.y} ${q.x},${q.y}`;
   };
@@ -59,7 +76,7 @@ export function TeamDiagram({ team, agents }: { team: TeamDef; agents: AgentDef[
             <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
           </marker>
         </defs>
-        {team.pattern === 'parallel' && <text x={W / 2} y={10} textAnchor="middle" className="cap">요청</text>}
+        {(team.pattern === 'parallel' || team.pattern === 'vote') && <text x={W / 2} y={10} textAnchor="middle" className="cap">{team.pattern === 'vote' ? '같은 문제' : '요청'}</text>}
         {arrows.map((a, i) => <path key={i} d={path(a)} className={a[2] ? 'back' : 'go'} markerEnd="url(#arrow)" />)}
         {nodes.map((n) => {
           const a = who(n.id);
@@ -73,9 +90,7 @@ export function TeamDiagram({ team, agents }: { team: TeamDef; agents: AgentDef[
         })}
       </svg>
       <figcaption>
-        {team.pattern === 'supervisor' ? '팀장이 일을 나눠 맡기고(실선) 결과를 돌려받아요(점선).'
-          : team.pattern === 'parallel' ? '모두 같은 요청을 동시에 받고, 메인이 결과를 합쳐요.'
-          : '사회자부터 시계방향으로 발언하고(실선), 사회자가 결론을 정리해요(점선).'}
+        {CAPTION[team.pattern]}
       </figcaption>
     </figure>
   );

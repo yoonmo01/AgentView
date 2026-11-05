@@ -113,8 +113,9 @@ li.fold { list-style: none; }
 .history { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; align-content: start; }
 .history .group { font-size: 11px; color: var(--muted); padding: 8px 6px 2px; }
-.members.stack { padding: 0 4px 0 6px; flex-wrap: nowrap; gap: 0; }
-.members.stack li { padding: 0; border: 0; background: transparent; margin-left: -6px; position: relative; }
+.members.stack { padding: 0 4px 0 10px; flex-wrap: nowrap; gap: 0; }
+.members.stack li { padding: 0; border: 0; background: transparent; margin-left: -12px; position: relative; transition: margin-left 0.2s var(--ease); }
+.members.stack:hover li { margin-left: 3px; } /* spread out to see each one */
 .members.stack li > span:not(.avatar) { display: none; }
 .members.stack .avatar { width: 24px; height: 24px; box-shadow: 0 0 0 2px #fff; }
 .members.stack .mini { position: absolute; right: -1px; bottom: -1px; box-shadow: 0 0 0 1.5px #fff; }

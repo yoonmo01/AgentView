@@ -38,6 +38,22 @@ it('debate room: the moderator at the head, members clockwise in speaking order'
   expect(room.desks).toEqual([]);
 });
 
+it('pipeline room: everyone in work order left to right, the finisher last', () => {
+  const ids = people(4);
+  const [room] = buildFloor([team('line', 'pipeline', 'a0', ids.slice(1))], ids.map(agent)).rooms;
+  const xs = ['a1', 'a2', 'a3', 'a0'].map((id) => room.seats.get(id)!.x);
+  expect(xs).toEqual([...xs].sort((a, b) => a - b));
+  expect(room.seats.get('a0')!.desk).toMatchObject({ lead: true });
+});
+
+it('review and vote rooms reuse the supervisor and parallel shapes', () => {
+  const ids = people(3);
+  const [rev] = buildFloor([team('r', 'review', 'a0', ids.slice(1))], ids.map(agent)).rooms;
+  const [vote] = buildFloor([team('v', 'vote', 'a0', ids.slice(1))], ids.map(agent)).rooms;
+  expect(rev.seats.get('a0')!.face).toBe(0); // the reviewer at the back faces the workers
+  expect(vote.seats.get('a0')!.face).toBe(Math.PI); // the judge in front faces the members
+});
+
 it('grows rooms with their members and the floor with the rooms; an agent gets a seat per team', () => {
   const small = buildFloor([team('a', 'supervisor', 'a0', ['a1'])], people(2).map(agent));
   const ids = people(10);
