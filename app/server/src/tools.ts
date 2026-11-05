@@ -1,4 +1,5 @@
-import { listFiles, readFile, teamspaceDir, workspaceDir, writeFile, type ExecResult } from './sandbox.ts';
+import path from 'node:path';
+import type { ExecResult, Files } from './sandbox.ts';
 import type { Agent, ToolDef } from './store.ts';
 
 export type ExecFn = (agent: Agent, command: string, timeoutSec: number, signal: AbortSignal) => Promise<ExecResult>;
@@ -20,31 +21,37 @@ export const listTools = () => DEFS.map(({ function: f }) => ({ name: f.name, de
 const MAX_OUT = 4_000; // tool output goes back into the model context, so keep it short
 const clip = (s: string) => (s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}\n...(${s.length - MAX_OUT} more characters cut)` : s);
 
-/** "/team/<id>/..." resolves to that team's shared folder (members only); anything else to the agent's /work. */
-function place(agent: Agent, dataDir: string, p: string): { root: string; rel: string; prefix: string } {
-  const m = /^\/team\/([a-z0-9][a-z0-9-]{0,40})(?:\/(.*))?$/.exec(p);
-  if (!m) return { root: workspaceDir(dataDir, agent.id), rel: p, prefix: '' };
+/**
+ * The container path meant by a tool or the files screen: relative or /work/... is the agent's workspace,
+ * /team/<id>/... a team folder (members only). The sandbox is the boundary; this keeps tools to those two places.
+ */
+export function containerPath(agent: Agent, p: unknown): string {
+  if (typeof p !== 'string' || p === '') throw new Error('path is required');
+  const abs = path.posix.normalize(p.startsWith('/') ? p : `/work/${p}`).replace(/(.)\/$/, '$1');
+  if (abs === '/work' || abs.startsWith('/work/')) return abs;
+  const m = /^\/team\/([a-z0-9][a-z0-9-]{0,40})(\/|$)/.exec(abs);
+  if (!m) throw new Error(`path outside workspace: ${p}`);
   if (!agent.teams?.includes(m[1])) throw new Error(`not a member of team ${m[1]}`);
-  return { root: teamspaceDir(dataDir, m[1]), rel: m[2] || '.', prefix: `/team/${m[1]}/` };
+  return abs;
 }
+/** Workspace files are shown relative to /work; team files keep their /team/<id>/ prefix. */
+export const shown = (p: string) => p.startsWith('/work/') ? p.slice('/work/'.length) : p;
 
 /** One tool call. Failures come back as "ERROR: ..." text so the model can react; cancellation propagates. */
-export async function runTool(agent: Agent, name: string, rawArgs: string, signal: AbortSignal, env: { dataDir: string; exec: ExecFn }): Promise<string> {
+export async function runTool(agent: Agent, name: string, rawArgs: string, signal: AbortSignal, env: { files: Files; exec: ExecFn }): Promise<string> {
   try {
     if (!agent.tools.includes(name)) throw new Error(`tool not allowed for this agent: ${name}`);
     const args = JSON.parse(rawArgs || '{}') as Record<string, unknown>;
     switch (name) {
       case 'sandbox_list_files': {
-        const { root, rel, prefix } = place(agent, env.dataDir, String(args.dir ?? '.'));
-        return clip((await listFiles(root, rel)).map((f) => prefix + f).join('\n') || '(no files)');
+        return clip((await env.files.list(agent, containerPath(agent, String(args.dir ?? '.')))).map(shown).join('\n') || '(no files)');
       }
       case 'sandbox_read_file': {
-        const { root, rel } = place(agent, env.dataDir, String(args.path ?? ''));
-        return clip(await readFile(root, rel));
+        return clip((await env.files.read(agent, containerPath(agent, args.path), 1_000_000)).toString('utf8'));
       }
       case 'sandbox_write_file': {
-        const { root, rel } = place(agent, env.dataDir, String(args.path ?? ''));
-        await writeFile(root, rel, args.content);
+        if (typeof args.content !== 'string') throw new Error('content must be a string');
+        await env.files.write(agent, containerPath(agent, args.path), args.content);
         return `wrote ${String(args.path)}`;
       }
       case 'sandbox_run': {

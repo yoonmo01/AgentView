@@ -45,9 +45,10 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   }
 
   async function remove() {
-    if (!form || !(await ask(`${form.name} 에이전트를 지울까요? 작업 파일은 남아요.`))) return;
+    if (!form || !(await ask(`${form.name} 에이전트를 지울까요?`))) return;
+    const withFiles = await ask(`${form.name}의 작업 폴더도 지울까요? 지운 파일은 되돌릴 수 없어요.`, '폴더도 지우기', '폴더는 남기기');
     try {
-      await api(`/agents/${form.id}`, { method: 'DELETE' });
+      await api(`/agents/${form.id}${withFiles ? '?files=true' : ''}`, { method: 'DELETE' });
       setForm(null);
       await reload();
       onChanged?.();

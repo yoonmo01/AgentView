@@ -1,9 +1,7 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Agent } from '../src/store.ts';
-import { runTool, toolDefs, type ExecFn } from '../src/tools.ts';
+import { containerPath, runTool, toolDefs, type ExecFn } from '../src/tools.ts';
+import { memFiles } from './memFiles.ts';
 
 const agent: Agent = {
   id: 'nova', name: 'Nova', role: '', connection: 'c', model: 'm', systemPrompt: '', maxSteps: 5,
@@ -12,7 +10,7 @@ const agent: Agent = {
 };
 const sig = () => new AbortController().signal;
 const neverExec: ExecFn = async () => { throw new Error('exec should not be called'); };
-const env = () => ({ dataDir: mkdtempSync(path.join(tmpdir(), 'av-tools-')), exec: neverExec });
+const env = () => ({ files: memFiles(), exec: neverExec });
 
 describe('tools', () => {
   it('offers only the tools the agent is allowed to use', () => {
@@ -33,6 +31,16 @@ describe('tools', () => {
     expect(await runTool(reader, 'sandbox_read_file', '{"path":"/team/dev/plan.md"}', sig(), e)).toBe('p');
     expect(await runTool(reader, 'sandbox_read_file', '{"path":"/team/ops/x"}', sig(), e)).toBe('ERROR: not a member of team ops');
     expect(await runTool(agent, 'sandbox_read_file', '{"path":"/team/dev/plan.md"}', sig(), e)).toMatch('not a member');
+  });
+
+  it('keeps paths to /work and the own team folders', () => {
+    const dev = { ...agent, teams: ['dev'] };
+    expect(containerPath(dev, 'src/a.py')).toBe('/work/src/a.py');
+    expect(containerPath(dev, '/work/')).toBe('/work');
+    expect(containerPath(dev, '/team/dev/plan.md')).toBe('/team/dev/plan.md');
+    expect(() => containerPath(dev, '/work/../etc/passwd')).toThrow('path outside workspace');
+    expect(() => containerPath(dev, '../../x')).toThrow('path outside workspace');
+    expect(() => containerPath(dev, '/team/ops/x')).toThrow('not a member of team ops');
   });
 
   it('returns failures as ERROR text for the model', async () => {
