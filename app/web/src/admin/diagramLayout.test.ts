@@ -34,6 +34,8 @@ it('keeps every picture readable for every pattern and team size (1 to 12 member
       // and never over anyone's name (the strip under each circle)
       for (let s = 0; s + 1 < e.points.length; s++) for (const o of people) {
         const [[ax, ay], [bx, by]] = [e.points[s], e.points[s + 1]];
+        // skip names nowhere near this segment, so the check stays fast
+        if (Math.max(ax, bx) < o.x - 30 || Math.min(ax, bx) > o.x + 30 || Math.max(ay, by) < o.y + R + 2 || Math.min(ay, by) > o.y + R + 16) continue;
         for (let t = 0; t <= 1; t += 0.02) {
           const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
           const onName = Math.abs(x - o.x) < 30 && y > o.y + R + 2 && y < o.y + R + 16;
