@@ -220,6 +220,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
     );
   }
 
+  const newChat = () => { setSessionId(null); setLines([]); setView('chat'); };
   let lastGroup = '';
   return (
     <section key="big" className={`dock open${view === 'files' ? ' wide' : ''}`} aria-label={`${name} 채팅`}>
@@ -235,12 +236,13 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
           <div className="who"><b>{name}</b><small>{view === 'history' ? '대화 기록' : view === 'files' ? (team ? '팀 폴더' : '작업 폴더') : team ? `${PATTERN_LABEL[team.pattern]} 팀` : agent?.role}</small></div>
           {team && <TeamMembers team={team} agents={agents} teams={teams} state={state} now={Date.now()} stack />}
           {agent && !team && <Chip status={status} />}
+          {view === 'chat' && target && <button className="new-chat" onClick={newChat} disabled={!!live || (!sessionId && !lines.length)} title="새 대화 시작">+ 새 대화</button>}
           {target && <button className="icon" onClick={() => onSettings(target)} title="설정" aria-label="설정">⚙</button>}
           <button className="icon" onClick={() => onExpand(false)} aria-label="채팅 접기">▾</button>
         </header>
         {view === 'history' ? (
           <div className="history">
-            <button className="add" onClick={() => { setSessionId(null); setLines([]); setView('chat'); }} disabled={!target || !!live}>+ 새 대화</button>
+            <button className="add" onClick={newChat} disabled={!target || !!live}>+ 새 대화</button>
             {dbOff && <p className="muted small">DB가 꺼져 있어 대화가 저장되지 않아요 (npm run db).</p>}
             {!dbOff && !sessions.length && <p className="empty-note">아직 대화가 없어요.</p>}
             <ul>

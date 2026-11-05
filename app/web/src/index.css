@@ -148,7 +148,8 @@ li.fold { list-style: none; }
 .dock.open .composer { border-top: 1px solid var(--line); }
 .composer textarea { width: 100%; resize: none; padding: 8px 10px; border: 1px solid #d6cfc2; border-radius: 10px; background: #fff; }
 .composer-bar { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
-.files-view { flex: 1; overflow: auto; padding: 12px; display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-content: start; }
+.files-view { flex: 1; min-height: 0; overflow: hidden; padding: 12px; display: grid; grid-template-columns: 200px 1fr; grid-template-rows: minmax(0, 1fr); gap: 10px; }
+/* the file list and the open file scroll on their own, so the list stays put */
 .files { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; }
 .files button { width: 100%; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .files button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
@@ -156,8 +157,8 @@ li.fold { list-style: none; }
 .files summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); padding: 2px 0; list-style: none; }
 .files summary::before { content: '▸ '; display: inline-block; transition: transform 0.15s; }
 .files details[open] > summary::before { transform: rotate(90deg); }
-.files-side { display: grid; gap: 8px; align-content: start; }
-.files-open { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.files-side { display: grid; gap: 8px; align-content: start; min-height: 0; overflow: auto; }
+.files-open { display: grid; grid-template-rows: minmax(0, 1fr); min-width: 0; min-height: 0; }
 a.button { display: inline-block; text-align: center; text-decoration: none; color: inherit; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 4px 10px; font-size: 12px; }
 a.button:hover { border-color: var(--accent); }
 
@@ -210,7 +211,8 @@ input[type='radio']:checked::after { content: ''; width: 6px; height: 6px; borde
   .dock.beside { right: 12px; }
   .roster { width: 180px; }
   .dock.open { height: calc(100% - 24px); }
-  .files-view { grid-template-columns: 1fr; }
+  .files-view { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .files-side { max-height: 30vh; }
 }
 
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
@@ -361,4 +363,16 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 .code-body pre { margin: 0; padding: 10px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.55; white-space: pre; color: #c9d1d9; }
 .code-body pre code.hljs { padding: 0; background: transparent; }
 .code-body .gutter { flex: none; text-align: right; color: #484f58; padding-right: 10px; border-right: 1px solid #21262d; user-select: none; }
-.code-view .md.doc { background: #fff; color: var(--text); padding: 12px 14px; font-size: 13px; line-height: 1.6; }
+.code-view .md.doc { overflow: auto; color: #c9d1d9; padding: 12px 16px 16px; font-size: 13px; line-height: 1.6; }
+.code-view .md.doc h1, .code-view .md.doc h2, .code-view .md.doc h3, .code-view .md.doc h4, .code-view .md.doc strong { color: #e6edf3; }
+.code-view .md.doc h1, .code-view .md.doc h2 { padding-bottom: 4px; border-bottom: 1px solid #21262d; }
+.code-view .md.doc a { color: #58a6ff; }
+.code-view .md.doc :not(pre) > code { background: rgba(110, 118, 129, 0.3); color: #e6edf3; }
+.code-view .md.doc blockquote { border-left-color: #30363d; color: #8b949e; }
+.code-view .md.doc th, .code-view .md.doc td { border-color: #30363d; }
+.code-view .md.doc th { background: #161b22; }
+.code-view .md.doc hr { border-top-color: #21262d; }
+.code-view .md.doc .code-block { border: 1px solid #30363d; }
+
+.new-chat { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }
+.new-chat:hover:not(:disabled) { border-color: var(--accent); }
