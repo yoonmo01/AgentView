@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, MAIN_ROLE, ORDERED, PATTERN_LABEL, type AgentDef, type TeamDef } from '../api.ts';
+import { api, MAIN_ROLE, ORDERED, PATTERN_LABEL, type AgentDef, type ModelConn, type TeamDef, type ToolInfo } from '../api.ts';
+import { newAgent } from './newAgent.ts';
 import { Avatar, TeamMark } from '../shell/ui.tsx';
 import { TeamDiagram } from './TeamDiagram.tsx';
 import { ask } from '../shell/ask.ts';
@@ -26,13 +27,30 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
   const [form, setForm] = useState<TeamDef | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
+  const [models, setModels] = useState<ModelConn[]>([]);
+  const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [draft, setDraft] = useState<{ name: string; role: string } | null>(null); // a new member made right here
 
   const fail = (e: unknown) => setMsg({ text: (e as Error).message, error: true });
   const reload = () => api<TeamDef[]>('/teams').then((list) => { setTeams(list); return list; });
   useEffect(() => {
     reload().then((list) => setForm(list.find((t) => t.id === focus) ?? null)).catch(fail);
     api<AgentDef[]>('/agents').then(setAgents).catch(fail);
+    api<ModelConn[]>('/models').then(setModels).catch(fail);
+    api<ToolInfo[]>('/tools').then(setTools).catch(fail);
   }, []);
+
+  /** Make an agent from a name and a role (defaults for the rest) and put it in the team. */
+  async function addNew() {
+    if (!draft?.name.trim()) return;
+    try {
+      const a = await api<AgentDef>('/agents', { method: 'POST', body: newAgent(draft.name.trim(), draft.role.trim(), agents, models, tools) });
+      setAgents(await api<AgentDef[]>('/agents'));
+      setForm((f) => f && { ...f, members: [...f.members, a.id] });
+      setDraft(null);
+      onChanged?.();
+    } catch (err) { fail(err); }
+  }
 
   const set = (patch: Partial<TeamDef>) => setForm((f) => f && { ...f, ...patch });
   const move = (from: number, to: number) => setForm((f) => {
@@ -134,17 +152,27 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
                 })}
               </ol>
               {!form.members.length && <p className="muted small">아래에서 구성원을 추가하세요.</p>}
-              {candidates.some((c) => !form.members.includes(c.value)) && (
-                <div className="add-chips">
-                  <small>추가</small>
-                  {candidates.filter((c) => !form.members.includes(c.value)).map((c) => (
-                    <button key={c.value} type="button" onClick={() => set({ members: [...form.members, c.value] })}>{c.mark} {c.label}</button>
-                  ))}
+              <div className="add-chips">
+                <small>추가</small>
+                {candidates.filter((c) => !form.members.includes(c.value)).map((c) => (
+                  <button key={c.value} type="button" onClick={() => set({ members: [...form.members, c.value] })}>{c.mark} {c.label}</button>
+                ))}
+                {!draft && <button type="button" className="new" onClick={() => setDraft({ name: '', role: '' })}>+ 새 에이전트</button>}
+              </div>
+              {draft && (
+                <div className="new-member">
+                  <input autoFocus placeholder="이름" maxLength={60} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addNew(); } }} />
+                  <input placeholder="역할 (예: 자료 조사)" maxLength={200} value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addNew(); } }} />
+                  <button type="button" className="primary" disabled={!draft.name.trim()} onClick={() => void addNew()}>만들어 추가</button>
+                  <button type="button" onClick={() => setDraft(null)}>취소</button>
+                  <small>모델·도구·샌드박스는 기본값으로 만들어요. 나중에 에이전트 설정에서 바꿀 수 있어요.</small>
                 </div>
               )}
             </fieldset>
             <fieldset className="roles">
-              <legend>팀에서의 역할과 지시</legend>
+              <legend>이 팀에서만 추가되는 역할과 지시</legend>
               <small>이 팀으로 일할 때만 쓰여요. 비워 두면 에이전트 설정의 역할과 지시문을 그대로 써요. 혼자 일할 때는 쓰이지 않아요.</small>
               {[form.main, ...form.members].filter((id) => !id.startsWith('team:')).map((id) => {
                 const a = agents.find((x) => x.id === id);

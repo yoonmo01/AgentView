@@ -377,3 +377,7 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 
 .new-chat { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 3px 10px; font-size: 12px; white-space: nowrap; }
 .new-chat:hover:not(:disabled) { border-color: var(--accent); }
+
+.add-chips button.new { border-style: solid; border-color: var(--accent); color: #8a5a00; padding: 3px 10px; }
+.new-member { display: grid; grid-template-columns: 1fr 1.3fr auto auto; gap: 6px; align-items: center; margin-top: 6px; }
+.new-member small { grid-column: 1 / -1; color: var(--muted); }
