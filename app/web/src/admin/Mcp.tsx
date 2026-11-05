@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { api } from '../api.ts';
 import { ask } from '../shell/ask.ts';
+import { IdField } from './IdField.tsx';
 
 type McpServer = {
   name: string;
@@ -93,9 +94,7 @@ export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
               ))}
             </div>
             {mode !== 'json' && (
-              <label>이름 (영문 소문자·숫자·-)
-                <input required pattern="[a-z0-9][a-z0-9\-]{0,30}" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-              </label>
+              <IdField label="이름" max={31} required value={f.name} onChange={(name) => setF({ ...f, name })} />
             )}
             {mode === 'url' && <label>URL<input required type="url" placeholder="https://example.com/mcp" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} /></label>}
             {mode === 'command' && (

@@ -40,7 +40,7 @@ async function docker(args: string[]): Promise<string> {
 }
 
 // joining or leaving a team changes the mounts, so it recreates the container like an image change does; v2 = files in volumes
-const configLabel = (a: Agent, image: string) => `v3|${image}|net=${a.sandbox.network}|teams=${(a.teams ?? []).join(',')}`; // v3: /skills mount
+const configLabel = (a: Agent, image: string) => `v4|${image}|net=${a.sandbox.network}|teams=${(a.teams ?? []).join(',')}`; // v4: Korean time and UTF-8
 
 /** Files from before volumes: move the old host folder aside first so it is copied in only once (the user deletes it later). */
 async function moveIn(dir: string, name: string, dest: string): Promise<void> {
@@ -69,6 +69,8 @@ export async function ensureContainer(agent: Agent, dataDir: string): Promise<vo
     'run', '-d', '--name', name, '--label', `agentview.config=${configLabel(agent, image)}`,
     ...(agent.sandbox.network ? [] : ['--network', 'none']),
     '--memory', '1g', '--cpus', '1',
+    // Korean time without tzdata in the image (POSIX TZ), and UTF-8 text in and out
+    '-e', 'TZ=KST-9', '-e', 'LANG=C.UTF-8', '-e', 'PYTHONIOENCODING=utf-8',
     '-v', `${workVolume(agent.id)}:/work`, ...teams.flatMap((t) => ['-v', `${teamVolume(t)}:/team/${t}`]),
     '-v', `${skillsDir(dataDir)}:/skills:ro`, '-w', '/work', // skills are definitions on the host, read-only inside
     image, 'tail', '-f', '/dev/null',

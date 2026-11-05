@@ -34,7 +34,7 @@ export function Tools({ onChanged }: { onChanged?: () => void }) {
           })}
         </ul>
       </section>
-      <h2 className="tools-sub">외부 도구 (MCP)</h2>
+      <h2 className="tools-sub">외부 도구 (MCP 서버)</h2>
       <Mcp onChanged={onChanged} />
     </div>
   );

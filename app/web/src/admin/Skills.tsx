@@ -3,6 +3,7 @@ import { api, type SkillInfo, type ToolInfo } from '../api.ts';
 import { ask } from '../shell/ask.ts';
 import { Markdown } from '../chat/Markdown.tsx';
 import { idFor } from './newAgent.ts';
+import { IdField } from './IdField.tsx';
 import { TOOL_KO } from './toolNames.ts';
 
 type Form = { id: string; name: string; description: string; allowedTools: string[]; body: string; source: string; files: string[] };
@@ -95,9 +96,7 @@ export function Skills() {
             {readOnly && <p className="muted small">가져온 스킬이라 여기서 고칠 수 없어요. 출처: <a href={form.source} target="_blank" rel="noreferrer">{form.source}</a></p>}
             <div className="row">
               <label>이름<input required maxLength={80} value={form.name} disabled={readOnly} onChange={(e) => set({ name: e.target.value })} /></label>
-              <label>ID{isNew && ' · 비우면 이름으로 자동'}
-                <input pattern="[a-z0-9][a-z0-9\-]{0,60}" value={form.id} disabled={!isNew} placeholder={isNew ? idFor(form.name, skills.map((s) => s.id)) : undefined} onChange={(e) => set({ id: e.target.value })} />
-              </label>
+              <IdField label={isNew ? 'ID (비우면 자동)' : 'ID'} max={61} value={form.id} disabled={!isNew} placeholder={isNew ? idFor(form.name, skills.map((s) => s.id)) : undefined} onChange={(id) => set({ id })} />
             </div>
             <label>한 줄 설명 (에이전트가 보고 쓸지 판단해요)
               <input maxLength={1000} value={form.description} disabled={readOnly} placeholder="예: 파이썬 코드를 체크리스트로 리뷰할 때" onChange={(e) => set({ description: e.target.value })} />

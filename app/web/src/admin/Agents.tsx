@@ -5,6 +5,7 @@ import { PluginPicker } from './PluginPicker.tsx';
 import { Avatar } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
 import { idFor, newAgent } from './newAgent.ts';
+import { IdField } from './IdField.tsx';
 import { parsePackages, SandboxEnv } from './SandboxEnv.tsx';
 import { TOOL_HELP, TOOL_KO } from './toolNames.ts';
 import { SkillPicker } from './SkillPicker.tsx';
@@ -110,10 +111,8 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
             <div className="row">
               <label>이름<input required maxLength={60} value={form.name} onChange={(e) => set({ name: e.target.value })} /></label>
               <label>역할<input maxLength={200} value={form.role} placeholder="예: 코딩 담당" onChange={(e) => set({ role: e.target.value })} /></label>
+              <IdField label={isNew ? 'ID (비우면 자동)' : 'ID'} value={form.id} disabled={!isNew} placeholder={isNew ? idFor(form.name, agents.map((a) => a.id)) : undefined} onChange={(id) => set({ id })} />
             </div>
-            <label>ID (영문 소문자·숫자·-){isNew && ' · 비우면 이름으로 자동'}
-              <input pattern="[a-z0-9][a-z0-9\-]{0,40}" value={form.id} disabled={!isNew} placeholder={isNew ? idFor(form.name, agents.map((a) => a.id)) : undefined} onChange={(e) => set({ id: e.target.value })} />
-            </label>
             <label>기본 지시문 (항상 적용)
               <textarea rows={6} value={form.systemPrompt} placeholder="혼자 일할 때도, 어느 팀에 있을 때도 맨 앞에 들어가는 성격과 규칙" onChange={(e) => set({ systemPrompt: e.target.value })} />
             </label>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, MAIN_ROLE, ORDERED, PATTERN_LABEL, type AgentDef, type ModelConn, type TeamDef, type ToolInfo } from '../api.ts';
 import { newAgent } from './newAgent.ts';
+import { IdField } from './IdField.tsx';
 import { Avatar, TeamMark } from '../shell/ui.tsx';
 import { TeamDiagram } from './TeamDiagram.tsx';
 import { ask } from '../shell/ask.ts';
@@ -111,10 +112,10 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
           <form onSubmit={save} className="form">
             <h2>{isNew ? '새 팀' : form.name}</h2>
             <TeamDiagram team={form} agents={agents} />
-            <label>ID (영문 소문자·숫자·-)
-              <input required pattern="[a-z0-9][a-z0-9\-]{0,40}" value={form.id} disabled={!isNew} onChange={(e) => set({ id: e.target.value })} />
-            </label>
-            <label>이름<input required maxLength={60} value={form.name} onChange={(e) => set({ name: e.target.value })} /></label>
+            <div className="row">
+              <IdField label="ID" value={form.id} required disabled={!isNew} onChange={(id) => set({ id })} />
+              <label>이름<input required maxLength={60} value={form.name} onChange={(e) => set({ name: e.target.value })} /></label>
+            </div>
             <fieldset className="swatches">
               <legend>팀 색 {!form.color && <small>(저장하면 다른 팀과 겹치지 않는 색이 정해져요)</small>}</legend>
               {TEAM_COLORS.map((c) => (
@@ -122,17 +123,19 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
                   aria-label={`색 ${c}`} onClick={() => set({ color: c })} />
               ))}
             </fieldset>
-            <label>구조
-              <select value={form.pattern} onChange={(e) => set({ pattern: e.target.value as TeamDef['pattern'] })}>
-                {Object.entries(PATTERN_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-              <small>{HELP[form.pattern]}</small>
-            </label>
-            <label>{form.pattern === 'supervisor' ? '메인 에이전트' : `${MAIN_ROLE[form.pattern]} (메인)`}
-              <select required value={form.main} onChange={(e) => set({ main: e.target.value, members: form.members.filter((m) => m !== e.target.value) })}>
-                {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </label>
+            <div className="row">
+              <label>구조
+                <select value={form.pattern} onChange={(e) => set({ pattern: e.target.value as TeamDef['pattern'] })}>
+                  {Object.entries(PATTERN_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+              <label>{form.pattern === 'supervisor' ? '메인 에이전트' : `${MAIN_ROLE[form.pattern]} (메인)`}
+                <select required value={form.main} onChange={(e) => set({ main: e.target.value, members: form.members.filter((m) => m !== e.target.value) })}>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <small className="muted help">{HELP[form.pattern]}</small>
             <fieldset className="order">
               <legend>{ORDERED[form.pattern] ?? '구성원'}</legend>
               {/* the order only means something where it is how the work runs: other patterns get no arrows or dragging */}
