@@ -36,7 +36,7 @@ export function SandboxEnv({ form, onSandbox, saved, rev }: {
       </label>
       <label className="check">
         <input type="checkbox" checked={form.sandbox.network} onChange={(e) => onSandbox({ ...form.sandbox, network: e.target.checked })} />
-        작업 중 인터넷 허용 (에이전트가 직접 설치한 패키지는 컨테이너를 다시 만들면 사라져요. 계속 쓸 건 위에서 고르세요)
+        작업 중 인터넷 허용 <small className="muted">(위 패키지 설치는 꺼져 있어도 돼요)</small>
       </label>
       {env && env.status !== 'none' && (
         <div className={`env-status ${env.status}`} role="status">

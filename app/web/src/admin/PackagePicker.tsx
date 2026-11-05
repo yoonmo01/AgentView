@@ -53,7 +53,8 @@ export function PackagePicker({ value, onChange }: { value: Packages; onChange: 
   return (
     <div className="pkg-picker">
       <button type="button" className="pkg-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        패키지 선택 {picked.length > 0 && <span className="count">{picked.length}개</span>}<span aria-hidden>{open ? '▴' : '▾'}</span>
+        <span className={picked.length ? "label on" : "label"}>{picked.length ? `추가 패키지 ${picked.length}개 선택됨` : '추가 패키지 고르기'}</span>
+        <span className="caret" aria-hidden>▾</span>
       </button>
       {picked.length > 0 && (
         <div className="pkg-chips">
