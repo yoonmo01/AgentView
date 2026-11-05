@@ -26,12 +26,13 @@ const clip = (s: string) => (s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}\n...($
 
 /**
  * The container path meant by a tool or the files screen: relative or /work/... is the agent's workspace,
- * /team/<id>/... a team folder (members only). The sandbox is the boundary; this keeps tools to those two places.
+ * /team/<id>/... a team folder (members only), /skills/... the skills (read-only, mounted so).
+ * The sandbox is the boundary; this keeps tools to those places.
  */
 export function containerPath(agent: Agent, p: unknown): string {
   if (typeof p !== 'string' || p === '') throw new Error('path is required');
   const abs = path.posix.normalize(p.startsWith('/') ? p : `/work/${p}`).replace(/(.)\/$/, '$1');
-  if (abs === '/work' || abs.startsWith('/work/')) return abs;
+  if (abs === '/work' || abs.startsWith('/work/') || abs === '/skills' || abs.startsWith('/skills/')) return abs;
   const m = /^\/team\/([a-z0-9][a-z0-9-]{0,40})(\/|$)/.exec(abs);
   if (!m) throw new Error(`path outside workspace: ${p}`);
   if (!agent.teams?.includes(m[1])) throw new Error(`not a member of team ${m[1]}`);

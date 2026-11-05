@@ -2,8 +2,9 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { rename } from 'node:fs/promises';
+import { mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
+import { skillsDir } from './skills.ts';
 import type { Agent, Packages } from './store.ts';
 
 /** Where agent and team files lived before they moved into Docker volumes: read once to move them in. */
@@ -39,7 +40,7 @@ async function docker(args: string[]): Promise<string> {
 }
 
 // joining or leaving a team changes the mounts, so it recreates the container like an image change does; v2 = files in volumes
-const configLabel = (a: Agent, image: string) => `v2|${image}|net=${a.sandbox.network}|teams=${(a.teams ?? []).join(',')}`;
+const configLabel = (a: Agent, image: string) => `v3|${image}|net=${a.sandbox.network}|teams=${(a.teams ?? []).join(',')}`; // v3: /skills mount
 
 /** Files from before volumes: move the old host folder aside first so it is copied in only once (the user deletes it later). */
 async function moveIn(dir: string, name: string, dest: string): Promise<void> {
@@ -63,11 +64,13 @@ export async function ensureContainer(agent: Agent, dataDir: string): Promise<vo
     await docker(['rm', '-f', name]);
   }
   const teams = agent.teams ?? [];
+  await mkdir(skillsDir(dataDir), { recursive: true }); // docker would otherwise create it owned by root
   await docker([
     'run', '-d', '--name', name, '--label', `agentview.config=${configLabel(agent, image)}`,
     ...(agent.sandbox.network ? [] : ['--network', 'none']),
     '--memory', '1g', '--cpus', '1',
-    '-v', `${workVolume(agent.id)}:/work`, ...teams.flatMap((t) => ['-v', `${teamVolume(t)}:/team/${t}`]), '-w', '/work',
+    '-v', `${workVolume(agent.id)}:/work`, ...teams.flatMap((t) => ['-v', `${teamVolume(t)}:/team/${t}`]),
+    '-v', `${skillsDir(dataDir)}:/skills:ro`, '-w', '/work', // skills are definitions on the host, read-only inside
     image, 'tail', '-f', '/dev/null',
   ]);
   await moveIn(workspaceDir(dataDir, agent.id), name, '/work');

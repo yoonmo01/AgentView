@@ -158,6 +158,22 @@ describe('http api', () => {
     expect(await (await fetch(`${url}/mcp`)).json()).toEqual([]);
   });
 
+  it('makes, lists and deletes skills, and lets agents pick them', async () => {
+    const url = await start();
+    const send = (method: string, p: string, payload?: unknown) => fetch(`${url}${p}`, {
+      method, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined,
+    });
+    const made = await send('PUT', '/skills/review', { name: '코드 리뷰', description: '체크리스트', body: '- 테스트', allowedTools: ['sandbox_read_file'] });
+    expect(made.status).toBe(200);
+    expect(await made.json()).toMatchObject({ id: 'review', source: 'local', body: '\n- 테스트\n' });
+    expect((await (await fetch(`${url}/skills`)).json()).map((s: { id: string }) => s.id)).toEqual(['review']);
+    expect((await send('PUT', '/agents/nova', { name: 'Nova', connection: 'c', skills: ['review'] })).status).toBe(200);
+    expect((await send('PUT', '/skills/Bad Id', { name: 'x', description: '', body: '' })).status).toBe(400);
+    expect((await send('POST', '/skills/import', { url: 'https://example.com/x' })).status).toBe(400);
+    expect((await send('DELETE', '/skills/review')).status).toBe(204);
+    expect((await fetch(`${url}/skills/review`)).status).toBe(404);
+  });
+
   it('serves workspace files, models and tools', async () => {
     const url = await start();
     files.put('nova', '/work/src/a.py', 'print(1)');

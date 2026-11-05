@@ -103,6 +103,13 @@ describe('runner', () => {
     expect(b.some((e) => e.name === 'agentview.queued')).toBe(true);
   });
 
+  it('puts the skill note right after the agent prompt', async () => {
+    const seen: ChatRequest[] = [];
+    await startRun({ threadId: 't', runId: 'skills', messages: [{ role: 'user', content: 'hi' }], target: 'agent:nova', defs: defsOf([{ ...agent, skillBrief: '## 사용할 수 있는 스킬' }]) },
+      deps(script([text('ok')], seen)), () => {}, sig());
+    expect(seen[0].messages.slice(0, 2)).toEqual([{ role: 'system', content: 'be brief' }, { role: 'system', content: '## 사용할 수 있는 스킬' }]);
+  });
+
   it('leaves the line when cancelled while waiting', async () => {
     const slow: ChatFn = async () => (async function* () {
       await new Promise((r) => setTimeout(r, 150));

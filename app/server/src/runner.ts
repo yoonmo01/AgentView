@@ -123,7 +123,7 @@ async function runExtra(extra: Extra, rawArgs: string, toolCallId: string, ctx: 
 }
 
 async function runAgent(agent: Agent, input: ChatMessage[], ctx: Ctx, seat: Seat, extra?: Extra): Promise<string> {
-  const messages: ChatMessage[] = [{ role: 'system', content: agent.systemPrompt }, ...input];
+  const messages: ChatMessage[] = [{ role: 'system', content: agent.systemPrompt }, ...(agent.skillBrief ? [note(agent.skillBrief)] : []), ...input];
   const tools = [...ctx.toolDefs(agent), ...(extra ? [extra.def] : [])];
   const handsOff = (c: { function: { name: string } }) => !!extra && c.function.name === extra.def.function.name;
   for (let step = 0; step < agent.maxSteps; step++) {

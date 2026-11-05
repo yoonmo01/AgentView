@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, type AgentDef, type ModelConn, type ToolInfo } from '../api.ts';
+import { api, type AgentDef, type ModelConn, type SkillInfo, type ToolInfo } from '../api.ts';
 import { Avatar } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
 import { idFor, newAgent } from './newAgent.ts';
 import { parsePackages, SandboxEnv } from './SandboxEnv.tsx';
 import { TOOL_HELP, TOOL_KO } from './toolNames.ts';
+import { SkillPicker } from './SkillPicker.tsx';
 
 /** Soft character colors; none is neon, and the last swatch opens a free color picker. */
 const AVATAR_COLORS = ['#e8805a', '#f2a65a', '#e9c46a', '#8cc084', '#4fb3a9', '#5b9bd5', '#6c7fd8', '#a084dc', '#e07ba0', '#c97b63', '#7d8597', '#3d5a80'];
@@ -15,6 +16,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   const [agents, setAgents] = useState<AgentDef[]>([]);
   const [models, setModels] = useState<ModelConn[]>([]);
   const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [form, setForm] = useState<AgentDef | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
@@ -26,6 +28,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
     reload().then((list) => setForm(list.find((a) => a.id === focus) ?? null)).catch(fail);
     api<ModelConn[]>('/models').then(setModels).catch(fail);
     api<ToolInfo[]>('/tools').then(setTools).catch(fail);
+    api<SkillInfo[]>('/skills').then(setSkills).catch(fail);
   }, []);
 
   const set = (patch: Partial<AgentDef>) => setForm((f) => f && { ...f, ...patch });
@@ -118,6 +121,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
                 ))}
               </fieldset>
             ))}
+            <SkillPicker form={form} skills={skills} onChange={(s) => set({ skills: s })} />
             <SandboxEnv form={form} texts={pkgs} onTexts={setPkgs} onSandbox={(sandbox) => set({ sandbox })} saved={isNew ? undefined : form.id} />
             <fieldset className="swatches">
               <legend>캐릭터 색</legend>

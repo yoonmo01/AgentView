@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import OpenAI from 'openai';
+import { listSkills, skillBrief } from './skills.ts';
 
 export type Agent = {
   id: string;
@@ -15,8 +16,12 @@ export type Agent = {
   sandbox: { image: string; network: boolean; packages?: Packages };
   avatar: { model: string; color: string };
   maxSteps: number;
+  /** skill ids (data/skills/<id>) the agent may use */
+  skills?: string[];
   /** Run-time only, never saved: teams the agent belongs to (shared folders are mounted from these). */
   teams?: string[];
+  /** Run-time only: the system note listing its skills (skills.ts skillBrief). */
+  skillBrief?: string;
 };
 
 /** Extra libraries for an agent's sandbox, by installer. */
@@ -93,7 +98,7 @@ export function checkAgent(a: Agent, known: { connections: string[]; tools: stri
   return bad ? `unknown tool: ${bad}` : null;
 }
 
-export const saveAgent = (dataDir: string, { teams: _runtimeOnly, ...agent }: Agent) => writeDef(dataDir, 'agents', agent);
+export const saveAgent = (dataDir: string, { teams: _runtimeOnly, skillBrief: _alsoRuntime, ...agent }: Agent) => writeDef(dataDir, 'agents', agent);
 export const deleteAgent = (dataDir: string, id: string) => unlink(agentFile(dataDir, id));
 export const listAgents = async (dataDir: string) => Promise.all((await listIds(dataDir, 'agents')).map((id) => loadAgent(dataDir, id)));
 
@@ -156,12 +161,15 @@ export type Defs = { agents: Map<string, Agent>; teams: Map<string, Team> };
 
 /** Snapshot every definition a run needs (target plus nested members), so edits mid-run apply to the next run. */
 export async function resolve(dataDir: string, target: string): Promise<Defs> {
-  const all = await listTeams(dataDir);
+  const [all, skills] = await Promise.all([listTeams(dataDir), listSkills(dataDir)]);
   const defs: Defs = { agents: new Map(), teams: new Map() };
   const visit = async (name: string): Promise<void> => {
     const n = nested(name);
     if (n === null) {
-      if (!defs.agents.has(name)) defs.agents.set(name, { ...(await loadAgent(dataDir, name)), teams: teamsOf(name, all) });
+      if (defs.agents.has(name)) return;
+      const a = await loadAgent(dataDir, name);
+      const brief = skillBrief(skills.filter((s) => a.skills?.includes(s.id))); // a deleted skill simply drops out
+      defs.agents.set(name, { ...a, teams: teamsOf(name, all), ...(brief ? { skillBrief: brief } : {}) });
       return;
     }
     if (defs.teams.has(n)) return;
