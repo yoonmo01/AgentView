@@ -1,7 +1,7 @@
 import path from 'node:path';
 import Fastify, { type FastifyReply } from 'fastify';
 import type { Db } from './db.ts';
-import { createBus, RUN_ID, summarizeRun, type Ev } from './events.ts';
+import { createBus, RUN_ID, summarizeRun, sumUsage, type Ev } from './events.ts';
 import { createMcp, MCP_NAME, parseConfig, type Mcp, type McpConfig } from './mcp.ts';
 import { startRun, type AgUiMessage, type Deps } from './runner.ts';
 import { dockerFiles, NotFound, removeContainer, removeWorkVolume, runInSandbox, type Files } from './sandbox.ts';
@@ -336,6 +336,8 @@ export function buildApp(opts: {
         const usedModel = model || mainAgent?.model
           || (await loadConnections(opts.dataDir)).find((c) => c.id === mainAgent?.connection)?.defaultModel || null;
         if (steps.length) await db.add(body.threadId, { runId: body.runId, role: 'activity', content: JSON.stringify(steps), model: null });
+        const usage = sumUsage(evs);
+        if (usage) await db.add(body.threadId, { runId: body.runId, role: 'usage', content: JSON.stringify(usage), model: null });
         if (end?.type === 'RUN_FINISHED') await db.add(body.threadId, { runId: body.runId, role: 'assistant', content: String(end.result ?? ''), model: usedModel || null });
         else if (end) await db.add(body.threadId, { runId: body.runId, role: 'error', content: String(end.message ?? 'error'), model: null });
       })

@@ -10,7 +10,7 @@ export const isTerminal = (e: Ev) => TERMINAL.has(e.type);
 
 export type Bus = ReturnType<typeof createBus>;
 
-export { summarizeRun, type Step } from './summary.ts';
+export { summarizeRun, sumUsage, type Step, type Usage } from './summary.ts';
 
 export function createBus(dir: string) {
   mkdirSync(dir, { recursive: true });
