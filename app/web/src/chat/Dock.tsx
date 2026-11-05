@@ -56,6 +56,8 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
   const [error, setError] = useState<string | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const justStarted = useRef<string | null>(null); // a session send() just created: keep its optimistic lines
+  const shown = useRef({ target, sessionId }); // what is on screen now: a run only writes back while its conversation is shown
+  shown.current = { target, sessionId };
 
   const isTeam = target?.startsWith('team:') ?? false;
   const team = isTeam ? teams.find((t) => `team:${t.id}` === target) : undefined;
@@ -77,7 +79,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
     : Promise.resolve([] as Session[]);
   // a new target opens its most recent session, so the conversation simply continues
   useEffect(() => {
-    setLines([]); setSessionId(null); setView('chat'); setError(null); setModel('');
+    setLines([]); setSessionId(null); setView('chat'); setError(null); setModel(''); setLive(null); // a run elsewhere keeps going on the server
     void loadSessions().then((l) => setSessionId(l[0]?.id ?? null));
   }, [target]);
   useEffect(() => {
@@ -99,6 +101,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
     setSessionId(sid);
     setLines((ls) => [...ls, { key: `u-${runId}`, role: 'user', text: content, model: model || null, at: new Date().toISOString() }]);
     setLive({ runId, events: [] });
+    const here = () => shown.current.target === target && shown.current.sessionId === sid;
     try {
       const res = await fetch('/api/agui', {
         method: 'POST',
@@ -111,8 +114,9 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `HTTP ${res.status}`);
       const events: AgUiEvent[] = [];
-      await readSse(res, (ev) => { events.push(ev); setLive({ runId, events: [...events] }); });
+      await readSse(res, (ev) => { events.push(ev); if (here()) setLive({ runId, events: [...events] }); });
       const end = events.at(-1);
+      if (!here()) return; // the user moved on: the outcome is saved and shows when they come back
       if (dbOff) { // no database: keep the outcome in memory only
         const steps = summarizeRun(events);
         setLines((ls) => [...ls,
@@ -125,9 +129,9 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
         void loadSessions();
       }
     } catch (err) {
-      setError((err as Error).message);
+      if (here()) setError((err as Error).message);
     } finally {
-      setLive(null);
+      setLive((l) => (l?.runId === runId ? null : l));
     }
   }
 
