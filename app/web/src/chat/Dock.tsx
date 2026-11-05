@@ -236,25 +236,29 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
           {team ? <TeamMark team={team} /> : agent && <Avatar agent={agent} />}
           <div className="who"><b>{name}</b><small>{team ? `${PATTERN_LABEL[team.pattern]} 팀` : agent?.role}</small></div>
           {agent && !team && <Chip status={status} />}
-          {agent && !team && (
+          {(team || agent) && (
             <div className="tabs">
               <button aria-selected={view === 'chat'} onClick={() => setView('chat')}>대화</button>
-              <button aria-selected={view === 'files'} onClick={() => setView('files')}>작업 폴더</button>
+              <button aria-selected={view === 'files'} onClick={() => setView('files')}>{team ? '팀 폴더' : '작업 폴더'}</button>
             </div>
           )}
           {target && <button className="icon" onClick={() => onSettings(target)} title="설정" aria-label="설정">⚙</button>}
           <button className="icon" onClick={() => onExpand(false)} aria-label="채팅 접기">▾</button>
         </header>
         {team && <div className="team-strip"><TeamMembers team={team} agents={agents} teams={teams} state={state} now={Date.now()} /></div>}
-        {view === 'files' && agent ? <Files agentId={agent.id} refresh={lines.length} /> : (
+        {view === 'files' && (team || agent) ? <Files key={target} base={team ? `/teams/${team.id}` : `/agents/${agent!.id}`} team={!!team} refresh={lines.length} /> : (
           <div className="log" ref={log} aria-live="polite">
             {!target && <p className="empty-note">오피스에서 캐릭터나 팀 방을 눌러 대화 상대를 고르세요.</p>}
             {target && !lines.length && !live && <p className="empty-note">{sessionId ? '불러오는 중…' : `${name}에게 첫 메시지를 보내 보세요.`}</p>}
             {lines.map((l) => l.role === 'activity' ? <Activity key={l.key} steps={l.steps ?? []} /> : (
               <div key={l.key} className={`msg msg-${l.role}`}>
                 <div className="text">{l.text}</div>
-                {(l.model || l.at) && <small>{[l.model, l.at && shortTime(l.at)].filter(Boolean).join(' · ')}</small>}
-                {l.usage && <Tokens usage={l.usage} names={(id) => agents.find((a) => a.id === id)?.name ?? id} />}
+                {(l.model || l.at || l.usage) && (
+                  <div className="meta">
+                    <small>{[l.model, l.at && shortTime(l.at)].filter(Boolean).join(' · ')}</small>
+                    {l.usage && <Tokens usage={l.usage} names={(id) => agents.find((a) => a.id === id)?.name ?? id} />}
+                  </div>
+                )}
               </div>
             ))}
             {live && (

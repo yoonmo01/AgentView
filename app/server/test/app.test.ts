@@ -121,6 +121,11 @@ describe('http api', () => {
     expect((await send('DELETE', '/agents/nova')).status).toBe(409);
     expect((await send('DELETE', '/teams/dev')).status).toBe(409); // big contains dev
     expect((await (await fetch(`${url}/teams`)).json()).map((t: { id: string; room: number }) => [t.id, t.room])).toEqual([['big', 2], ['dev', 1]]);
+    files.put('atlas', '/team/dev/plan.md', '# plan'); // the team volume, seen through the main's sandbox
+    expect(await (await fetch(`${url}/teams/dev/files`)).json()).toEqual(['plan.md']);
+    expect(await (await fetch(`${url}/teams/dev/files/plan.md`)).text()).toBe('# plan');
+    expect((await fetch(`${url}/teams/dev/files/..%2F..%2Fwork%2Fx`)).status).toBe(400);
+    expect((await fetch(`${url}/teams/ghost/files`)).status).toBe(404);
 
     const res = await post(url, body('team1', 'team:dev'));
     const evs = sseEvents(await res.text());

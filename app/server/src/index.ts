@@ -9,7 +9,7 @@ import {
   AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadConnections,
   resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
-import { containerPath, listTools, runTool, shown, toolDefs, type ExecFn } from './tools.ts';
+import { containerPath, listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
 
 const ID = RUN_ID.source;
 const TARGET = '^(agent|team):[a-z0-9][a-z0-9-]{0,40}$';
@@ -136,48 +136,62 @@ export function buildApp(opts: {
   const withTeams = async (id: string) => agentExists(opts.dataDir, id) ? (await resolve(opts.dataDir, `agent:${id}`)).agents.get(id)! : null;
   /** A missing file is 404; anything else means the sandbox could not be reached (Docker off, image missing). */
   const fileError = (reply: FastifyReply, e: unknown) => reply.code(e instanceof NotFound ? 404 : 503).send({ error: (e as Error).message });
+  /**
+   * Whose folder a files URL means: an agent's /work, or a team's /team/<id> reached through its main's sandbox
+   * (the team volume is mounted in every member's sandbox, so no team container is needed).
+   */
+  const owners = {
+    agents: async (id: string) => { const agent = await withTeams(id); return agent && { agent, root: '/work', zip: `${id}-work.zip` }; },
+    teams: async (id: string) => {
+      const team = teamExists(opts.dataDir, id) ? (await listTeams(opts.dataDir)).find((t) => t.id === id) : undefined;
+      const agent = team && await withTeams(team.main);
+      return agent && { agent, root: `/team/${id}`, zip: `${id}-team.zip` };
+    },
+  };
+  for (const [kind, owner] of Object.entries(owners)) {
+    const missing = { error: `${kind === 'agents' ? 'agent' : 'team'} not found` };
+    app.get(`/${kind}/:id/files`, { schema: { params: agentParams } }, async (req, reply) => {
+      const o = await owner((req.params as { id: string }).id);
+      if (!o) return reply.code(404).send(missing);
+      try {
+        return (await files.list(o.agent, o.root)).map((f) => f.slice(o.root.length + 1));
+      } catch (e) {
+        return fileError(reply, e);
+      }
+    });
 
-  app.get('/agents/:id/files', { schema: { params: agentParams } }, async (req, reply) => {
-    const agent = await withTeams((req.params as { id: string }).id);
-    if (!agent) return reply.code(404).send({ error: 'agent not found' });
-    try {
-      return (await files.list(agent, '/work')).map(shown);
-    } catch (e) {
-      return fileError(reply, e);
-    }
-  });
+    app.get(`/${kind}/:id/files/*`, { schema: { params: agentParams, querystring: { type: 'object', properties: { download: { type: 'boolean' } } } } }, async (req, reply) => {
+      const { id, '*': rel } = req.params as { id: string; '*': string };
+      const o = await owner(id);
+      if (!o) return reply.code(404).send(missing);
+      let file: string;
+      try {
+        file = containerPath(o.agent, `${o.root}/${rel}`);
+        if (!file.startsWith(`${o.root}/`)) throw new Error(`path outside the folder: ${rel}`);
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
+      try {
+        const body = await files.read(o.agent, file);
+        if (!(req.query as { download?: boolean }).download) return reply.type('text/plain; charset=utf-8').send(body);
+        return reply.type('application/octet-stream')
+          .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(path.posix.basename(file))}`).send(body);
+      } catch (e) {
+        return fileError(reply, e);
+      }
+    });
 
-  app.get('/agents/:id/files/*', { schema: { params: agentParams, querystring: { type: 'object', properties: { download: { type: 'boolean' } } } } }, async (req, reply) => {
-    const { id, '*': rel } = req.params as { id: string; '*': string };
-    const agent = await withTeams(id);
-    if (!agent) return reply.code(404).send({ error: 'agent not found' });
-    let file: string;
-    try {
-      file = containerPath(agent, rel);
-    } catch (e) {
-      return reply.code(400).send({ error: (e as Error).message });
-    }
-    try {
-      const body = await files.read(agent, file);
-      if (!(req.query as { download?: boolean }).download) return reply.type('text/plain; charset=utf-8').send(body);
-      return reply.type('application/octet-stream')
-        .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(path.posix.basename(file))}`).send(body);
-    } catch (e) {
-      return fileError(reply, e);
-    }
-  });
-
-  app.get('/agents/:id/zip', { schema: { params: agentParams } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const agent = await withTeams(id);
-    if (!agent) return reply.code(404).send({ error: 'agent not found' });
-    try {
-      const body = await files.zip(agent, '/work');
-      return reply.type('application/zip').header('content-disposition', `attachment; filename="${id}-work.zip"`).send(body);
-    } catch (e) {
-      return fileError(reply, e);
-    }
-  });
+    app.get(`/${kind}/:id/zip`, { schema: { params: agentParams } }, async (req, reply) => {
+      const o = await owner((req.params as { id: string }).id);
+      if (!o) return reply.code(404).send(missing);
+      try {
+        const body = await files.zip(o.agent, o.root);
+        return reply.type('application/zip').header('content-disposition', `attachment; filename="${o.zip}"`).send(body);
+      } catch (e) {
+        return fileError(reply, e);
+      }
+    });
+  }
 
   app.get('/teams', async () => listTeams(opts.dataDir));
 

@@ -244,7 +244,9 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 /* thin scrollbars */
 * { scrollbar-width: thin; scrollbar-color: #d3cbbd transparent; }
 
-.files-view.empty { display: grid; place-items: center; grid-template-columns: 1fr; }
+.files-view.empty { display: grid; place-items: center; align-content: center; grid-template-columns: 1fr; }
+.files-view.empty .empty-note { max-width: none; }
+.empty-note small { display: block; margin-top: 4px; }
 /* one empty-state look: centered both ways in its panel (chat log, work folder) */
 .empty-note { margin: auto; max-width: 320px; text-align: center; color: var(--muted); line-height: 1.6; }
 
@@ -309,8 +311,11 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 .roles details > label { display: grid; gap: 4px; padding: 8px 10px 0; }
 .roles details > label:last-child { padding-bottom: 10px; }
 
-.msg .tokens { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.msg .meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.msg-user .meta { justify-content: flex-end; }
+.msg .tokens { color: var(--muted); font-size: 11px; padding: 0 4px; text-align: right; white-space: nowrap; }
 .msg details.tokens summary { cursor: pointer; list-style: none; }
 .msg details.tokens summary::after { content: ' ▾'; }
+.msg details.tokens[open] summary::after { content: ' ▴'; }
 .msg details.tokens ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
 .msg details.tokens b { font-weight: 600; margin-right: 4px; }
