@@ -446,3 +446,6 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 .tool-list details[open] summary small { visibility: hidden; }
 .tool-list details p { margin: 0; padding: 0 10px 8px; font-size: 12px; color: var(--text); line-height: 1.55; overflow-wrap: anywhere; }
 .tool-list code { white-space: nowrap; }
+.form .field-error { color: #b42525; font-size: 12px; }
+.form input[aria-invalid='true'] { border-color: #e08a8a; }
+.form > .help { margin-top: -8px; }
