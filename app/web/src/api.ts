@@ -15,7 +15,7 @@ export type AgentDef = {
 export type TeamDef = {
   id: string;
   name: string;
-  pattern: 'supervisor' | 'parallel' | 'debate';
+  pattern: 'supervisor' | 'parallel' | 'debate' | 'pipeline' | 'review' | 'vote';
   main: string;
   members: string[];
   limits: { maxDepth: number; maxCalls: number; timeoutSec: number; rounds: number };
@@ -25,7 +25,15 @@ export type TeamDef = {
   /** Per person, used only when working in this team: a role replacing the agent's own and instructions added to its own. */
   roles: Record<string, { role: string; instructions: string }>;
 };
-export const PATTERN_LABEL: Record<TeamDef['pattern'], string> = { supervisor: '메인-하위', parallel: '병렬 분담', debate: '토론' };
+export const PATTERN_LABEL: Record<TeamDef['pattern'], string> = {
+  supervisor: '메인-하위', parallel: '병렬 분담', debate: '토론', pipeline: '순차 파이프라인', review: '검토 반복', vote: '투표/심판',
+};
+/** What the main does in each pattern. */
+export const MAIN_ROLE: Record<TeamDef['pattern'], string> = {
+  supervisor: '메인', parallel: '취합 담당', debate: '사회자', pipeline: '마무리 담당', review: '검토자', vote: '심판',
+};
+/** Patterns where the member order is how the work runs: speaking order, or work order. */
+export const ORDERED: Partial<Record<TeamDef['pattern'], string>> = { debate: '발언 순서', pipeline: '작업 순서' };
 export type ModelConn ={ id: string; baseURL: string; defaultModel?: string; maxTokens?: number };
 /** Mirrors the server's sessions (server/src/db.ts). `activity` content is a JSON list of Step. */
 export type Session = { id: string; target: string; title: string; createdAt: string; updatedAt: string };

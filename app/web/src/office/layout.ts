@@ -47,6 +47,8 @@ const across = (i: number, cols: number) => (i % cols - (cols - 1) / 2) * COL;
  * - supervisor: the lead desk at the back faces the members' rows (three per row) in front of it
  * - parallel: members side by side (four per row) facing the camera, the main's merge desk in front facing them
  * - debate: a round table; the moderator at the head (back), members clockwise in speaking order
+ * - pipeline: everyone in work order left to right (four per row), the finisher's desk last
+ * - review: like supervisor (the reviewer faces the workers); vote: like parallel (the judge faces the members)
  */
 function plan(team: TeamDef, people: string[]): Plan {
   const [main, ...members] = people;
@@ -69,10 +71,27 @@ function plan(team: TeamDef, people: string[]): Plan {
       return { seats, desks: [], props };
     } };
   }
-  const cols = Math.max(1, Math.min(m, team.pattern === 'parallel' ? 4 : 3));
+  if (team.pattern === 'pipeline') {
+    const cols = Math.max(1, Math.min(people.length, 4));
+    const rows = Math.ceil(people.length / cols);
+    const w = Math.max(MIN_ROOM_W, cols * COL + 1.6), d = Math.max(MIN_ROOM_D, 1.7 + (rows - 1) * ROW + SEAT + 1.6);
+    return { w, d, build: (cx, z0) => {
+      const desks: Desk[] = [];
+      const seats = new Map<string, Seat>();
+      // members first, the finisher last: the work moves along the row
+      [...members, main].forEach((id, i) => {
+        const desk: Desk = { x: cx + across(i, cols), z: z0 + 1.7 + Math.floor(i / cols) * ROW, lead: i === members.length };
+        desks.push(desk);
+        seats.set(id, seatAt(desk));
+      });
+      return { seats, desks, props: [{ name: 'bookcaseOpen', x: cx - w / 2 + 0.7, z: z0 + 0.35, size: [0.8, 1.76, 0.5] }, { ...PLANT, x: cx + w / 2 - 0.5, z: z0 + 0.5 }] };
+    } };
+  }
+  const facing = team.pattern === 'parallel' || team.pattern === 'vote';
+  const cols = Math.max(1, Math.min(m, facing ? 4 : 3));
   const rows = Math.ceil(m / cols);
   const w = Math.max(MIN_ROOM_W, cols * COL + 1.6);
-  const supervisor = team.pattern !== 'parallel';
+  const supervisor = !facing;
   // depth: back margin, the lead or member rows, the merge desk for parallel, then room to walk by the door
   const lastSit = supervisor ? 3.5 + Math.max(0, rows - 1) * ROW + SEAT : 1.7 + Math.max(0, rows - 1) * ROW + 2.0 + SEAT;
   const d = Math.max(MIN_ROOM_D, lastSit + 1.1);

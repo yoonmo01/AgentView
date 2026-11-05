@@ -279,7 +279,56 @@ async function debate(team: Team, input: ChatMessage[], ctx: Ctx): Promise<strin
   return runMain(team, [...brief(team, team.main), ...input, say(`토론 기록:\n\n${said.join('\n\n')}\n\n사회자로서 결론을 정리하세요.`)], ctx);
 }
 
-const patterns: Record<Team['pattern'], (team: Team, input: ChatMessage[], ctx: Ctx) => Promise<string>> = { supervisor, parallel, debate };
+/** Members work in order, each taking the previous result; the main (finisher) writes the final answer from the last one. */
+async function pipeline(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
+  let prev: { who: string; result: string } | undefined;
+  for (const [i, m] of team.members.entries()) {
+    ctx.emit({ type: EventType.CUSTOM, name: 'agentview.pipeline_step', value: { step: i + 1, member: m } });
+    const result = await runSub(m, [folder(team), ...brief(team, m), ...input, say(prev
+      ? `${i + 1}단계입니다. 앞 단계(${prev.who})의 결과:\n${prev.result}\n\n이 결과를 이어받아 당신(${label(m, ctx, team)})의 역할 부분을 하고, 다음 단계가 쓸 결과를 내세요.`
+      : `1단계입니다. 당신(${label(m, ctx, team)})의 역할 부분을 하고, 다음 단계가 쓸 결과를 내세요.`)], ctx);
+    prev = { who: label(m, ctx, team), result };
+  }
+  return runMain(team, [folder(team), ...brief(team, team.main), ...input, say(`마지막 단계(${prev!.who})의 결과:\n${prev!.result}\n\n이 결과를 바탕으로 최종 답을 쓰세요.`)], ctx);
+}
+
+/**
+ * The members make the work (each improving the one before), the main reviews it; repeat until the review passes
+ * or the rounds run out. The answer is the work itself, not the review.
+ */
+async function review(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
+  let draft = '';
+  let feedback = '';
+  for (let round = 1; round <= team.limits.rounds; round++) {
+    for (const m of team.members) {
+      draft = await runSub(m, [folder(team), ...brief(team, m), ...input, say(draft
+        ? `현재 결과물:\n${draft}\n\n${feedback ? `검토 의견:\n${feedback}\n\n` : ''}의견을 반영해 고친 결과물 전체를 내세요.`
+        : '요청에 맞는 결과물을 만드세요. 결과물 전체를 내세요.')], ctx);
+    }
+    const verdict = await runMain(team, [folder(team), ...brief(team, team.main), ...input, say(
+      `검토할 결과물:\n${draft}\n\n검토자로서 판단하세요. 통과면 첫 줄에 정확히 "통과"라고 쓰고 이유를 짧게, ` +
+      '아니면 첫 줄에 "수정 필요"라고 쓰고 고칠 점을 구체적으로 적으세요.')], ctx);
+    const passed = verdict.trim().startsWith('통과');
+    ctx.emit({ type: EventType.CUSTOM, name: 'agentview.review', value: { round, passed } });
+    if (passed) return draft;
+    feedback = verdict;
+  }
+  return draft; // the rounds ran out: the latest version is the best there is
+}
+
+/** Every member answers the same question on their own, without seeing the others; the main (judge) picks or merges, saying why. */
+async function vote(team: Team, input: ChatMessage[], ctx: Ctx): Promise<string> {
+  const results = await Promise.allSettled(team.members.map((m) =>
+    runSub(m, [folder(team), ...brief(team, m), ...input, say('다른 사람과 상의하지 말고, 이 문제에 대한 당신의 답과 근거를 내세요.')], ctx)));
+  const fatal = results.find((r): r is PromiseRejectedResult => r.status === 'rejected' && (ctx.signal.aborted || r.reason instanceof LimitError));
+  if (fatal) throw fatal.reason;
+  const answers = results.map((r, i) =>
+    `[${label(team.members[i], ctx, team)}]\n${r.status === 'fulfilled' ? r.value : `(실패: ${(r.reason as Error).message})`}`).join('\n\n');
+  return runMain(team, [folder(team), ...brief(team, team.main), ...input, say(
+    `구성원들의 답:\n\n${answers}\n\n심판으로서 가장 좋은 답을 고르거나 장점을 합쳐 최종 답을 쓰고, 왜 그렇게 판단했는지 짧게 밝히세요.`)], ctx);
+}
+
+const patterns: Record<Team['pattern'], (team: Team, input: ChatMessage[], ctx: Ctx) => Promise<string>> = { supervisor, parallel, debate, pipeline, review, vote };
 
 const pub = ({ id, name, role, avatar }: Agent) => ({ id, name, role, avatar });
 

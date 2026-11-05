@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, PATTERN_LABEL, type AgentDef, type TeamDef } from '../api.ts';
+import { api, MAIN_ROLE, ORDERED, PATTERN_LABEL, type AgentDef, type TeamDef } from '../api.ts';
 import { Avatar, TeamMark } from '../shell/ui.tsx';
 import { TeamDiagram } from './TeamDiagram.tsx';
 import { ask } from '../shell/ask.ts';
@@ -15,6 +15,9 @@ const HELP: Record<TeamDef['pattern'], string> = {
   supervisor: '메인이 delegate 도구로 구성원에게 일을 나눠 맡기고 결과를 받아 정리해요.',
   parallel: '모든 구성원이 같은 요청을 각자 역할로 동시에 처리하고, 메인이 결과를 합쳐요.',
   debate: '구성원이 라운드마다 차례로 발언하고, 메인(사회자)이 결론을 정리해요.',
+  pipeline: '구성원이 정한 순서대로 일하고, 앞 사람의 결과가 다음 사람에게 넘어가요. 메인이 마지막 결과로 최종 답을 써요.',
+  review: '구성원이 결과물을 만들면 메인(검토자)이 검토해요. 통과할 때까지(최대 라운드 수) 고치기를 반복해요.',
+  vote: '모든 구성원이 같은 문제를 서로 보지 않고 각자 풀고, 메인(심판)이 가장 좋은 답을 고르거나 합쳐요.',
 };
 
 export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => void } = {}) {
@@ -107,18 +110,18 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
               </select>
               <small>{HELP[form.pattern]}</small>
             </label>
-            <label>{form.pattern === 'debate' ? '사회자 (메인)' : '메인 에이전트'}
+            <label>{form.pattern === 'supervisor' ? '메인 에이전트' : `${MAIN_ROLE[form.pattern]} (메인)`}
               <select required value={form.main} onChange={(e) => set({ main: e.target.value, members: form.members.filter((m) => m !== e.target.value) })}>
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </label>
             <fieldset className="order">
-              <legend>{form.pattern === 'debate' ? '발언 순서' : '구성원'}</legend>
-              {/* only a debate's order means something (speaking order): other patterns get no arrows or dragging */}
-              <ol className={form.pattern === 'debate' ? undefined : 'plain'}>
+              <legend>{ORDERED[form.pattern] ?? '구성원'}</legend>
+              {/* the order only means something where it is how the work runs: other patterns get no arrows or dragging */}
+              <ol className={ORDERED[form.pattern] ? undefined : 'plain'}>
                 {form.members.map((m, i) => {
                   const c = candidates.find((x) => x.value === m);
-                  const ordered = form.pattern === 'debate';
+                  const ordered = !!ORDERED[form.pattern];
                   return (
                     <li key={m} draggable={ordered} onDragStart={ordered ? (e) => e.dataTransfer.setData('text/plain', String(i)) : undefined}
                       onDragOver={ordered ? (e) => e.preventDefault() : undefined} onDrop={ordered ? (e) => { e.preventDefault(); move(Number(e.dataTransfer.getData('text/plain')), i); } : undefined}>
@@ -160,8 +163,8 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
               })}
             </fieldset>
             <div className="row">
-              {form.pattern === 'debate' && (
-                <label>라운드 (1~5)<input type="number" min={1} max={5} value={form.limits.rounds} onChange={(e) => setLimit('rounds', Number(e.target.value))} /></label>
+              {(form.pattern === 'debate' || form.pattern === 'review') && (
+                <label>{form.pattern === 'review' ? '최대 검토 라운드 (1~5)' : '라운드 (1~5)'}<input type="number" min={1} max={5} value={form.limits.rounds} onChange={(e) => setLimit('rounds', Number(e.target.value))} /></label>
               )}
               <label>모델 호출 한도 (1~200)<input type="number" min={1} max={200} value={form.limits.maxCalls} onChange={(e) => setLimit('maxCalls', Number(e.target.value))} /></label>
               <label>중첩 깊이 (1~5)<input type="number" min={1} max={5} value={form.limits.maxDepth} onChange={(e) => setLimit('maxDepth', Number(e.target.value))} /></label>
