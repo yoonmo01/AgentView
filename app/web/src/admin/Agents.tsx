@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { ModelPicker } from '../chat/ModelPicker.tsx';
 import { api, type AgentDef, type ModelConn, type PluginState, type SkillInfo, type ToolInfo } from '../api.ts';
 import { PluginPicker } from './PluginPicker.tsx';
 import { Avatar } from '../shell/ui.tsx';
@@ -23,6 +24,11 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   const [isNew, setIsNew] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [pkgs, setPkgs] = useState({ pip: '', npm: '', apt: '' }); // package fields as typed
+  const [available, setAvailable] = useState<string[]>([]); // models of the picked connection
+  useEffect(() => {
+    if (!form?.connection) return;
+    api<string[]>(`/models/${form.connection}/available`).then(setAvailable).catch(() => setAvailable([]));
+  }, [form?.connection]);
 
   const fail = (e: unknown) => setMsg({ text: (e as Error).message, error: true });
   const reload = () => api<AgentDef[]>('/agents').then((list) => { setAgents(list); return list; });
@@ -117,10 +123,10 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
                   {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
                 </select>
               </label>
-              <label>모델 (비우면 연결 기본값)
-                <input value={form.model} placeholder={models.find((m) => m.id === form.connection)?.defaultModel}
-                  onChange={(e) => set({ model: e.target.value })} />
-              </label>
+              {/* a div, not a label: a label would forward clicks on the list to the picker button */}
+              <div className="field"><span>모델</span>
+                <ModelPicker value={form.model} models={available} defaultModel={models.find((m) => m.id === form.connection)?.defaultModel ?? ''} down onChange={(model) => set({ model })} />
+              </div>
               <label>최대 단계<input type="number" min={1} max={20} value={form.maxSteps} onChange={(e) => set({ maxSteps: Number(e.target.value) })} /></label>
             </div>
             {[...new Set(tools.map((t) => t.server))].map((server) => (

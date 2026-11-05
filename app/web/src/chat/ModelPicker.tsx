@@ -26,8 +26,8 @@ export function compareModels(a: string, b: string): number {
  * Model picker for one message: a button that opens a searchable list grouped by provider, above the composer.
  * `value` '' means the agent's default model.
  */
-export function ModelPicker({ value, models, defaultModel, compact, onChange }: {
-  value: string; models: string[]; defaultModel: string; compact?: boolean; onChange: (m: string) => void;
+export function ModelPicker({ value, models, defaultModel, compact, down, onChange }: {
+  value: string; models: string[]; defaultModel: string; compact?: boolean; /** open the list below the button (in forms) */ down?: boolean; onChange: (m: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -45,8 +45,8 @@ export function ModelPicker({ value, models, defaultModel, compact, onChange }: 
   const label = value || (compact ? defaultModel || '기본 모델' : `기본 모델 (${defaultModel || '연결 기본값'})`);
 
   return (
-    <div className="model-picker" ref={box} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } }}>
-      <button type="button" className="model-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="listbox" title="이 메시지에 쓸 모델">
+    <div className={down ? "model-picker down" : "model-picker"} ref={box} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } }}>
+      <button type="button" className="model-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="listbox" title={down ? "이 에이전트의 기본 모델" : "이 메시지에 쓸 모델"}>
         <span>{label}</span><span aria-hidden className="caret-down" />
       </button>
       {open && (

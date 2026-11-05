@@ -130,7 +130,13 @@ export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
             <h3 className="sub">도구 {current.tools.length}개 <small>에이전트 탭에서 허용하면 쓸 수 있어요</small></h3>
             <ul className="tool-list">
               {current.tools.map((t) => (
-                <li key={t.name} title={t.description}><code>{t.name.slice(`mcp__${current.name}__`.length) || t.name}</code><small>{t.description}</small></li>
+                <li key={t.name}>
+                  {/* one line each; open a row to read the whole description */}
+                  <details>
+                    <summary><code>{t.name.slice(`mcp__${current.name}__`.length) || t.name}</code><small>{t.description}</small></summary>
+                    <p>{t.description || '설명 없음'}</p>
+                  </details>
+                </li>
               ))}
             </ul>
             <div className="actions">
