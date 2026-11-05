@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { summarizeRun, sumUsage } from '../../../server/src/summary.ts';
+import { Markdown } from './Markdown.tsx';
 import { api, PATTERN_LABEL, readSse, type AgentDef, type ModelConn, type Session, type SessionMessage, type Step, type TeamDef, type Usage } from '../api.ts';
 import { describeTool, displayStatus, type AgUiEvent, type OfficeState } from '../office/state.ts';
 import { Avatar, Chip, TeamMark, TeamMembers } from '../shell/ui.tsx';
@@ -166,9 +167,11 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
   // collapsed: one line of what is happening now, or the last answer, so sending does not need the full panel
   const lastStep = liveSteps.at(-1);
   const lastLine = [...lines].reverse().find((l) => l.role === 'assistant' || l.role === 'error');
-  const preview: { kind: 'live' | 'error' | 'last'; head: string; text: string } | null = error ? { kind: 'error', head: '오류', text: error }
-    : live ? { kind: 'live', head: '진행 중', text: lastStep && !lastStep.result ? `${lastStep.who} ${describeTool(lastStep.tool, lastStep.args)}` : liveText.slice(-160) || '생각 중…' }
-    : lastLine ? { kind: lastLine.role === 'error' ? 'error' : 'last', head: ['마지막 답', lastLine.at && shortTime(lastLine.at)].filter(Boolean).join(' · '), text: lastLine.text }
+  // md: the text is the model's own words (Markdown), not a tool line or an error
+  const doing = lastStep && !lastStep.result;
+  const preview: { kind: 'live' | 'error' | 'last'; head: string; text: string; md: boolean } | null = error ? { kind: 'error', head: '오류', text: error, md: false }
+    : live ? { kind: 'live', head: '진행 중', text: doing ? `${lastStep.who} ${describeTool(lastStep.tool, lastStep.args)}` : liveText.slice(-160) || '생각 중…', md: !doing && !!liveText }
+    : lastLine ? { kind: lastLine.role === 'error' ? 'error' : 'last', head: ['마지막 답', lastLine.at && shortTime(lastLine.at)].filter(Boolean).join(' · '), text: lastLine.text, md: lastLine.role !== 'error' }
     : null;
   const composer = (
     <form className="composer" onSubmit={send}>
@@ -199,7 +202,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
         {preview && (
           <div className={`dock-last ${preview.kind}`} title={preview.text}>
             <small>{preview.head}</small>
-            <p>{preview.text}</p>
+            {preview.md ? <Markdown text={preview.text} className="clamp" /> : <p>{preview.text}</p>}
           </div>
         )}
         {composer}
@@ -252,7 +255,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
             {target && !lines.length && !live && <p className="empty-note">{sessionId ? '불러오는 중…' : `${name}에게 첫 메시지를 보내 보세요.`}</p>}
             {lines.map((l) => l.role === 'activity' ? <Activity key={l.key} steps={l.steps ?? []} /> : (
               <div key={l.key} className={`msg msg-${l.role}`}>
-                <div className="text">{l.text}</div>
+                {l.role === 'assistant' ? <Markdown text={l.text} className="text" /> : <div className="text">{l.text}</div>}
                 {(l.model || l.at || l.usage) && (
                   <div className="meta">
                     <small>{[l.model, l.at && shortTime(l.at)].filter(Boolean).join(' · ')}</small>
@@ -264,7 +267,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
             {live && (
               <>
                 <Activity steps={liveSteps} live />
-                <div className="msg msg-assistant live"><div className="text">{liveText || '생각 중…'}</div></div>
+                <div className="msg msg-assistant live">{liveText ? <Markdown text={liveText} className="text" /> : <div className="text">생각 중…</div>}</div>
               </>
             )}
             {error && <p className="error">{error}</p>}
