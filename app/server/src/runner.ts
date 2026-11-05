@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventType } from '@ag-ui/core';
 import type { Ev } from './events.ts';
+import { slotWatch } from './sandbox.ts';
 import type { Agent, ChatFn, ChatMessage, Defs, Team, ToolDef } from './store.ts';
 
 export type Emit = (e: Ev) => void;
@@ -172,8 +173,12 @@ async function run(name: string, input: ChatMessage[], ctx: Ctx, extra?: Extra):
     free: () => { if (held) { held = false; pass(agent.id); } },
   };
   await seat.take(false);
+  // a sandbox slot wait shows on this agent like waiting for its turn does
+  const watch = (waiting: boolean) => ctx.emit(waiting
+    ? { type: EventType.CUSTOM, name: 'agentview.queued', value: { agentId: agent.id, reason: 'sandbox' } }
+    : { type: EventType.CUSTOM, name: 'agentview.resumed', value: { agentId: agent.id } });
   try {
-    return await runAgent(agent, input, ctx, seat, extra);
+    return await slotWatch.run(watch, () => runAgent(agent, input, ctx, seat, extra));
   } finally {
     seat.free();
   }
