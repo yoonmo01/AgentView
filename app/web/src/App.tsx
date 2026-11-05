@@ -8,8 +8,9 @@ import { Roster } from './shell/Roster.tsx';
 
 /** One screen: the office fills it; the roster, the settings drawer and the chat float over it. */
 export default function App() {
-  const runId = new URLSearchParams(location.search).get('run');
-  const state = useOffice(runId);
+  const query = new URLSearchParams(location.search);
+  const runId = query.get('run');
+  const state = useOffice(runId, Math.min(Math.max(Number(query.get('speed')) || 1, 0.25), 16));
   const [agents, setAgents] = useState<AgentDef[]>([]);
   const [teams, setTeams] = useState<TeamDef[]>([]);
   const [error, setError] = useState<string | null>(null);
