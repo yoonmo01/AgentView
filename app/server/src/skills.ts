@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { downloadDir, tree, type Repo } from './github.ts';
 
 /**
  * Skills: a folder with SKILL.md (front matter `name`, `description`, optional `allowed-tools`, then the procedure)
@@ -74,42 +75,24 @@ export function parseGitHub(url: string): { owner: string; repo: string; ref: st
   return { owner: m[1], repo: m[2], ref: m[3], dir: m[4].replace(/\/SKILL\.md$/, '') };
 }
 
-type GhItem = { type: 'file' | 'dir'; name: string; path: string; size: number; download_url: string | null };
-const MAX_FILES = 100;
-const MAX_FILE_BYTES = 1_000_000;
+export const skillIdFor = (name: string) => name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
 
-/**
- * Copy a skill folder from GitHub (public repositories, through the contents API) into data/skills/<id>.
- * Paths come from GitHub, so each is checked to stay inside the skill folder.
- */
+/** Copy one skill folder of a GitHub repo (`files`: the repo tree) into data/skills/<id>, marking where it came from. */
+export async function copySkill(dataDir: string, r: Repo, files: { path: string; size: number }[], from: string, id: string, source: string, fetchFn: typeof fetch = fetch): Promise<void> {
+  if (!files.some((f) => f.path === `${from}/SKILL.md`)) throw new Error(`이 폴더에 SKILL.md가 없어요: ${from}`);
+  const dir = dirOf(dataDir, id);
+  await rm(dir, { recursive: true, force: true });
+  await downloadDir(r, files, from, dir, fetchFn);
+  await writeFile(path.join(dir, '.source'), source);
+}
+
+/** Copy a skill folder from a public GitHub repository into data/skills/<id>. */
 export async function importSkill(dataDir: string, url: string, fetchFn: typeof fetch = fetch): Promise<string> {
   const g = parseGitHub(url);
   if (!g) throw new Error('GitHub 폴더 주소가 아니에요 (예: https://github.com/<owner>/<repo>/tree/main/skills/<이름>)');
-  const id = path.posix.basename(g.dir).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  const id = skillIdFor(path.posix.basename(g.dir));
   if (!SKILL_ID.test(id)) throw new Error(`이 폴더 이름으로는 스킬 ID를 만들 수 없어요: ${g.dir}`);
-  const files: { rel: string; url: string }[] = [];
-  const walk = async (dir: string): Promise<void> => {
-    const res = await fetchFn(`https://api.github.com/repos/${g.owner}/${g.repo}/contents/${dir}?ref=${encodeURIComponent(g.ref)}`, { headers: { Accept: 'application/vnd.github+json' } });
-    if (!res.ok) throw new Error(`GitHub에서 폴더를 읽지 못했어요 (${res.status}): ${dir}`);
-    for (const it of await res.json() as GhItem[]) {
-      if (it.type === 'dir') await walk(it.path);
-      else if (it.type === 'file' && it.download_url && it.size <= MAX_FILE_BYTES) files.push({ rel: it.path.slice(g.dir.length + 1), url: it.download_url });
-      if (files.length > MAX_FILES) throw new Error(`파일이 ${MAX_FILES}개보다 많아요`);
-    }
-  };
-  await walk(g.dir);
-  if (!files.some((f) => f.rel === 'SKILL.md')) throw new Error('이 폴더에 SKILL.md가 없어요');
-  const dir = dirOf(dataDir, id);
-  await rm(dir, { recursive: true, force: true });
-  for (const f of files) {
-    const target = path.resolve(dir, f.rel);
-    if (!target.startsWith(dir + path.sep)) throw new Error(`folder escape in ${f.rel}`);
-    const res = await fetchFn(f.url);
-    if (!res.ok) throw new Error(`GitHub에서 파일을 받지 못했어요 (${res.status}): ${f.rel}`);
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, Buffer.from(await res.arrayBuffer()));
-  }
-  await writeFile(path.join(dir, '.source'), url.trim());
+  await copySkill(dataDir, g, await tree(g, fetchFn), g.dir, id, url.trim(), fetchFn);
   return id;
 }
 

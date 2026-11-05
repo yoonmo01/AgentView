@@ -4,28 +4,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { importSkill, listSkills, loadSkill, parseGitHub, parseSkill, saveSkill, skillBrief, skillText } from '../src/skills.ts';
 import { resolve, saveAgent, withDefaults } from '../src/store.ts';
+import { fakeGithub } from './fakeGithub.ts';
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), 'av-skills-'));
-
-/** A fake GitHub: folder listings from the contents API and raw file downloads. */
-function github(tree: Record<string, string>): typeof fetch {
-  return (async (input: string | URL) => {
-    const url = String(input);
-    const listing = /\/contents\/(.+?)\?ref=/.exec(url);
-    if (listing) {
-      const dir = decodeURIComponent(listing[1]);
-      const kids = new Map<string, 'file' | 'dir'>();
-      for (const p of Object.keys(tree)) if (p.startsWith(`${dir}/`)) {
-        const rest = p.slice(dir.length + 1).split('/');
-        kids.set(`${dir}/${rest[0]}`, rest.length > 1 ? 'dir' : 'file');
-      }
-      if (!kids.size) return new Response('not found', { status: 404 });
-      return Response.json([...kids].map(([p, type]) => ({ type, name: path.posix.basename(p), path: p, size: 10, download_url: type === 'file' ? `https://raw/${p}` : null })));
-    }
-    const raw = url.replace('https://raw/', '');
-    return raw in tree ? new Response(tree[raw]) : new Response('missing', { status: 404 });
-  }) as typeof fetch;
-}
 
 describe('skills', () => {
   it('reads and writes SKILL.md front matter', () => {
@@ -47,14 +28,15 @@ describe('skills', () => {
     expect(parseGitHub('https://github.com/acme/skills/blob/main/skills/pdf-report/SKILL.md')?.dir).toBe('skills/pdf-report');
     expect(parseGitHub('https://example.com/x')).toBeNull();
     const dir = tmp();
-    const id = await importSkill(dir, 'https://github.com/acme/skills/tree/main/skills/pdf-report', github({
+    const id = await importSkill(dir, 'https://github.com/acme/skills/tree/main/skills/pdf-report', fakeGithub({ 'acme/skills': {
       'skills/pdf-report/SKILL.md': '---\nname: pdf\ndescription: makes PDFs\n---\nsteps',
       'skills/pdf-report/scripts/make.py': 'print(1)',
-    }));
+      'other/readme.md': 'not copied',
+    } }));
     expect(id).toBe('pdf-report');
     expect(await loadSkill(dir, id)).toMatchObject({ name: 'pdf', source: 'https://github.com/acme/skills/tree/main/skills/pdf-report', files: ['SKILL.md', 'scripts/make.py'] });
-    await expect(importSkill(dir, 'https://github.com/acme/skills/tree/main/skills/empty', github({ 'skills/empty/readme.txt': 'x' }))).rejects.toThrow('SKILL.md가 없어요');
-    await expect(importSkill(dir, 'https://example.com/x', github({}))).rejects.toThrow('GitHub 폴더 주소');
+    await expect(importSkill(dir, 'https://github.com/acme/skills/tree/main/skills/empty', fakeGithub({ 'acme/skills': { 'skills/empty/readme.txt': 'x' } }))).rejects.toThrow('SKILL.md가 없어요');
+    await expect(importSkill(dir, 'https://example.com/x', fakeGithub({}))).rejects.toThrow('GitHub 폴더 주소');
   });
 
   it('gives an agent a note with only its skills, and a deleted skill drops out', async () => {
