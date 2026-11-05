@@ -110,7 +110,7 @@ export function Mcp({ onChanged }: { onChanged?: () => void } = {}) {
               </>
             )}
             {mode === 'json' && (
-              <label>Claude Desktop·Cursor와 같은 mcpServers 형식
+              <label aria-label="mcpServers JSON">
                 <textarea rows={10} className="mono" value={f.json} onChange={(e) => setF({ ...f, json: e.target.value })} />
               </label>
             )}

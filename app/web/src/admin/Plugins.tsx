@@ -16,14 +16,20 @@ export function Plugins({ onChanged }: { onChanged?: () => void }) {
 
   const reload = () => api<PluginState>('/plugins').then(setState).catch((e: Error) => setMsg({ text: e.message, error: true }));
   useEffect(() => { void reload(); }, []);
-  const run = async (what: string, fn: () => Promise<unknown>, done: string) => {
+  const run = async <T,>(what: string, fn: () => Promise<T>, done: string | ((r: T) => string)) => {
     setBusy(what); setMsg(null);
-    try { await fn(); setMsg({ text: done }); await reload(); onChanged?.(); } catch (e) { setMsg({ text: (e as Error).message, error: true }); } finally { setBusy(null); }
+    try { const r = await fn(); setMsg({ text: typeof done === 'string' ? done : done(r) }); await reload(); onChanged?.(); } catch (e) { setMsg({ text: (e as Error).message, error: true }); } finally { setBusy(null); }
   };
 
   const addMarket = (e: FormEvent) => {
     e.preventDefault();
-    void run('market', () => api('/plugins/marketplaces', { method: 'POST', body: { repo: repo.trim() } }).then(() => setRepo('')), '마켓플레이스를 추가했어요.');
+    void run('market', async () => {
+      const r = await api<{ kind: 'marketplace' | 'plugin'; installed?: { name: string; skills: string[] } }>('/plugins/add', { method: 'POST', body: { repo: repo.trim() } });
+      setRepo('');
+      return r;
+    }, (r) => r.kind === 'plugin'
+      ? `플러그인 하나짜리 저장소라 바로 설치했어요: ${r.installed!.name} (스킬 ${r.installed!.skills.length}개)`
+      : '마켓플레이스를 추가했어요. 아래에서 플러그인을 골라 설치하세요.');
   };
   const installed = new Map(state.installed.map((p) => [p.name, p]));
   const catalog = state.marketplaces.flatMap((m) => m.plugins.map((p) => ({ ...p, marketplace: m.name })))
@@ -33,25 +39,25 @@ export function Plugins({ onChanged }: { onChanged?: () => void }) {
     <div className="plugins-page">
       {msg && <p className={msg.error ? 'error' : 'ok'} role="status">{msg.text}</p>}
 
-      <section className="tool-list">
-        <h2>마켓플레이스</h2>
-        <p className="muted small">플러그인 목록을 담은 GitHub 저장소예요 (Claude Code와 같은 형식). 예: anthropics/claude-plugins-official</p>
+      <section className="tool-card">
+        <h2>마켓플레이스 · 플러그인 추가</h2>
+        <p className="muted small">GitHub 주소를 넣으면 알아서 구분해요. 플러그인 목록(marketplace.json)이 있으면 마켓플레이스로 추가하고, 플러그인 하나(plugin.json이나 skills/)만 있으면 바로 설치해요. 예: obra/superpowers, anthropics/claude-plugins-official</p>
         <form className="inline-add" onSubmit={addMarket}>
-          <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repo 또는 https://github.com/owner/repo" />
+          <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repo 또는 https://github.com/owner/repo" aria-label="마켓플레이스 또는 플러그인 GitHub 주소" />
           <button type="submit" disabled={!repo.trim() || !!busy}>{busy === 'market' ? '읽는 중…' : '추가'}</button>
         </form>
         <ul>
           {state.marketplaces.map((m) => (
             <li key={m.name}>
-              <div><b>{m.name}</b> <code>{m.repo}@{m.ref}</code><small>플러그인 {m.plugins.length}개</small></div>
-              <button type="button" disabled={!!busy} onClick={() => void run(`r-${m.name}`, () => api(`/plugins/marketplaces/${encodeURIComponent(m.name)}/refresh`, { method: 'POST' }), '목록을 새로 읽었어요.')}>새로 읽기</button>
+              <div><b>{m.name.startsWith('github:') ? m.plugins[0]?.name : m.name}</b> <code>{m.repo}@{m.ref}</code><small>{m.name.startsWith('github:') ? '플러그인 저장소 (직접 설치)' : `플러그인 ${m.plugins.length}개`}</small></div>
+              {!m.name.startsWith('github:') && <button type="button" disabled={!!busy} onClick={() => void run(`r-${m.name}`, () => api(`/plugins/marketplaces/${encodeURIComponent(m.name)}/refresh`, { method: 'POST' }), '목록을 새로 읽었어요.')}>새로 읽기</button>}
               <button type="button" className="danger" disabled={!!busy} onClick={async () => { if (await ask(`${m.name} 마켓플레이스를 목록에서 뺄까요? 설치한 플러그인은 그대로예요.`, '빼기')) void run('rm', () => api(`/plugins/marketplaces/${encodeURIComponent(m.name)}`, { method: 'DELETE' }), '뺐어요.'); }}>빼기</button>
             </li>
           ))}
         </ul>
       </section>
 
-      <section className="tool-list">
+      <section className="tool-card">
         <h2>설치한 플러그인</h2>
         {!state.installed.length && <p className="muted small">아직 없어요.</p>}
         <ul>
@@ -74,7 +80,7 @@ export function Plugins({ onChanged }: { onChanged?: () => void }) {
         </ul>
       </section>
 
-      <section className="tool-list">
+      <section className="tool-card">
         <h2>설치할 수 있는 플러그인</h2>
         {state.marketplaces.length > 0 && <input className="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름이나 설명으로 찾기" />}
         {!state.marketplaces.length && <p className="muted small">마켓플레이스를 먼저 추가하세요.</p>}
