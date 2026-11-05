@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.ts';
+import { CodeView } from './CodeView.tsx';
 
 type Dir = { dirs: Map<string, Dir>; files: string[] };
 const newDir = (): Dir => ({ dirs: new Map(), files: [] });
@@ -52,8 +53,9 @@ export function Files({ base, team, refresh }: { base: string; team?: boolean; r
       </div>
       {open ? (
         <div className="files-open">
-          <div className="files-head"><code>{open.path}</code><a className="button" href={`${url(open.path)}?download=true`} download>다운로드</a></div>
-          {open.text.includes('\u0000') ? <p className="muted">미리 볼 수 없는 파일이에요. 다운로드해서 여세요.</p> : <pre aria-label={open.path}>{open.text}</pre>}
+          {open.text.includes('\u0000')
+            ? <p className="muted">미리 볼 수 없는 파일이에요. <a href={`${url(open.path)}?download=true`} download>다운로드</a>해서 여세요.</p>
+            : <CodeView key={open.path} path={open.path} text={open.text} download={`${url(open.path)}?download=true`} />}
         </div>
       ) : <p className="muted">파일을 누르면 내용이 보여요.</p>}
     </div>
