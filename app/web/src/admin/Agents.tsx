@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, type AgentDef, type ModelConn, type SkillInfo, type ToolInfo } from '../api.ts';
+import { api, type AgentDef, type ModelConn, type PluginState, type SkillInfo, type ToolInfo } from '../api.ts';
+import { PluginPicker } from './PluginPicker.tsx';
 import { Avatar } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
 import { idFor, newAgent } from './newAgent.ts';
@@ -17,6 +18,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   const [models, setModels] = useState<ModelConn[]>([]);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [plugins, setPlugins] = useState<PluginState['installed']>([]);
   const [form, setForm] = useState<AgentDef | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
@@ -29,6 +31,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
     api<ModelConn[]>('/models').then(setModels).catch(fail);
     api<ToolInfo[]>('/tools').then(setTools).catch(fail);
     api<SkillInfo[]>('/skills').then(setSkills).catch(fail);
+    api<PluginState>('/plugins').then((s) => setPlugins(s.installed)).catch(() => {});
   }, []);
 
   const set = (patch: Partial<AgentDef>) => setForm((f) => f && { ...f, ...patch });
@@ -87,6 +90,17 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
         {!form ? <p>왼쪽에서 에이전트를 고르거나 새로 만드세요.</p> : (
           <form onSubmit={save} className="form">
             <h2>{isNew ? '새 에이전트' : form.name}</h2>
+            {isNew && plugins.some((p) => p.agents.length) && (
+              <label>플러그인 템플릿으로 채우기
+                <select value="" onChange={(e) => {
+                  const t = plugins.flatMap((p) => p.agents).find((a) => `${a.plugin}/${a.name}` === e.target.value);
+                  if (t) set({ name: t.name, role: t.description.slice(0, 200), systemPrompt: t.prompt.slice(0, 20_000) });
+                }}>
+                  <option value="">템플릿 고르기…</option>
+                  {plugins.flatMap((p) => p.agents).map((a) => <option key={`${a.plugin}/${a.name}`} value={`${a.plugin}/${a.name}`}>{a.plugin} · {a.name}</option>)}
+                </select>
+              </label>
+            )}
             <div className="row">
               <label>이름<input required maxLength={60} value={form.name} onChange={(e) => set({ name: e.target.value })} /></label>
               <label>역할<input maxLength={200} value={form.role} placeholder="예: 코딩 담당" onChange={(e) => set({ role: e.target.value })} /></label>
@@ -121,6 +135,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
                 ))}
               </fieldset>
             ))}
+            <PluginPicker form={form} plugins={plugins} tools={tools} onChange={set} />
             <SkillPicker form={form} skills={skills} onChange={(s) => set({ skills: s })} />
             <SandboxEnv form={form} texts={pkgs} onTexts={setPkgs} onSandbox={(sandbox) => set({ sandbox })} saved={isNew ? undefined : form.id} />
             <fieldset className="swatches">

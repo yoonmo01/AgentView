@@ -77,3 +77,13 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 
 /** Mirrors server/src/skills.ts. `source` is "local" for skills made here, else where it was copied from. */
 export type SkillInfo = { id: string; name: string; description: string; allowedTools: string[]; source: string; files: string[] };
+
+/** Mirrors server/src/plugins.ts. */
+export type MarketPlugin = { name: string; description: string; version?: string };
+export type Marketplace = { name: string; repo: string; ref: string; plugins: MarketPlugin[] };
+export type AgentTemplate = { plugin: string; name: string; description: string; prompt: string };
+export type InstalledPlugin = {
+  name: string; marketplace: string; version?: string; description: string;
+  skills: string[]; mcp: string[]; agents: AgentTemplate[]; hooks: number; commands: number; notes: string[];
+};
+export type PluginState = { marketplaces: Marketplace[]; installed: InstalledPlugin[] };

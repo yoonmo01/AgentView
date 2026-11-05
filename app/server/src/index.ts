@@ -9,6 +9,7 @@ import {
   AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadAgent, loadConnections,
   resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
+import { addMarketplace, installPlugin, loadPlugins, removeMarketplace, uninstallPlugin } from './plugins.ts';
 import { deleteSkill, importSkill, listSkills, loadSkill, saveSkill, SKILL_ID } from './skills.ts';
 import { containerPath, listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
 
@@ -243,6 +244,31 @@ export function buildApp(opts: {
     });
   app.delete('/skills/:id', { schema: { params: skillParams } }, async (req, reply) => {
     await deleteSkill(opts.dataDir, (req.params as { id: string }).id);
+    return reply.code(204).send();
+  });
+
+  // Plugins: marketplaces (GitHub repos with .claude-plugin/marketplace.json) and installed plugins
+  const nameParams = { type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 1, maxLength: 100 } } };
+  const pluginError = (reply: FastifyReply, e: unknown) => reply.code(400).send({ error: (e as Error).message });
+  app.get('/plugins', async () => loadPlugins(opts.dataDir));
+  app.post('/plugins/marketplaces', { schema: { body: { type: 'object', required: ['repo'], additionalProperties: false, properties: { repo: { type: 'string', maxLength: 300 } } } } },
+    async (req, reply) => addMarketplace(opts.dataDir, (req.body as { repo: string }).repo, opts.fetch).catch((e) => pluginError(reply, e)));
+  app.post('/plugins/marketplaces/:name/refresh', { schema: { params: nameParams } }, async (req, reply) => {
+    const m = (await loadPlugins(opts.dataDir)).marketplaces.find((x) => x.name === (req.params as { name: string }).name);
+    if (!m) return reply.code(404).send({ error: 'marketplace not found' });
+    return addMarketplace(opts.dataDir, m.repo, opts.fetch).catch((e) => pluginError(reply, e));
+  });
+  app.delete('/plugins/marketplaces/:name', { schema: { params: nameParams } }, async (req, reply) => {
+    await removeMarketplace(opts.dataDir, (req.params as { name: string }).name);
+    return reply.code(204).send();
+  });
+  app.post('/plugins/install', { schema: { body: { type: 'object', required: ['marketplace', 'plugin'], additionalProperties: false,
+    properties: { marketplace: { type: 'string', maxLength: 100 }, plugin: { type: 'string', maxLength: 100 } } } } }, async (req, reply) => {
+    const b = req.body as { marketplace: string; plugin: string };
+    return installPlugin(opts.dataDir, mcp, b.marketplace, b.plugin, opts.fetch).catch((e) => pluginError(reply, e));
+  });
+  app.delete('/plugins/:name', { schema: { params: nameParams } }, async (req, reply) => {
+    await uninstallPlugin(opts.dataDir, mcp, (req.params as { name: string }).name);
     return reply.code(204).send();
   });
 
