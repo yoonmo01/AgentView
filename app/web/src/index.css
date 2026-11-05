@@ -285,6 +285,8 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 
 /* ordered team members (settings › 팀) */
 .form fieldset.order { display: grid; gap: 8px; }
+.form fieldset.order > p { margin: 0; }
+.form fieldset.order > ol:empty { display: none; }
 .order ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .order li { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: grab; }
 .order li:active { cursor: grabbing; }
