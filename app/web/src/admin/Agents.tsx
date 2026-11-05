@@ -6,7 +6,7 @@ import { Avatar } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
 import { idFor, newAgent } from './newAgent.ts';
 import { IdField } from './IdField.tsx';
-import { parsePackages, SandboxEnv } from './SandboxEnv.tsx';
+import { SandboxEnv } from './SandboxEnv.tsx';
 import { TOOL_HELP, TOOL_KO } from './toolNames.ts';
 import { SkillPicker } from './SkillPicker.tsx';
 
@@ -24,7 +24,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   const [form, setForm] = useState<AgentDef | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
-  const [pkgs, setPkgs] = useState({ pip: '', npm: '', apt: '' }); // package fields as typed
+  const [saves, setSaves] = useState(0); // the sandbox build starts on save
   const [available, setAvailable] = useState<string[]>([]); // models of the picked connection
   useEffect(() => {
     if (!form?.connection) return;
@@ -44,8 +44,6 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   const set = (patch: Partial<AgentDef>) => setForm((f) => f && { ...f, ...patch });
   const open = (a: AgentDef | null) => {
     setForm(a ?? { ...newAgent('', '', agents, models, tools), id: '' });
-    const p = a?.sandbox.packages;
-    setPkgs({ pip: p?.pip.join(' ') ?? '', npm: p?.npm.join(' ') ?? '', apt: p?.apt.join(' ') ?? '' });
     setIsNew(!a);
     setMsg(null);
   };
@@ -54,12 +52,12 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
     e.preventDefault();
     if (!form) return;
     try {
-      const packages = { pip: parsePackages(pkgs.pip), npm: parsePackages(pkgs.npm), apt: parsePackages(pkgs.apt) };
-      const body = { ...form, id: isNew && !form.id ? idFor(form.name, agents.map((a) => a.id)) : form.id, sandbox: { ...form.sandbox, packages } };
+      const body = { ...form, id: isNew && !form.id ? idFor(form.name, agents.map((a) => a.id)) : form.id };
       const saved = await api<AgentDef>(isNew ? '/agents' : `/agents/${form.id}`, { method: isNew ? 'POST' : 'PUT', body });
       setForm(saved);
       setIsNew(false);
       setMsg({ text: '저장했어요.' });
+      setSaves((n) => n + 1);
       await reload();
       onChanged?.();
     } catch (err) { fail(err); }
@@ -142,7 +140,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
             ))}
             <PluginPicker form={form} plugins={plugins} tools={tools} onChange={set} />
             <SkillPicker form={form} skills={skills} onChange={(s) => set({ skills: s })} />
-            <SandboxEnv form={form} texts={pkgs} onTexts={setPkgs} onSandbox={(sandbox) => set({ sandbox })} saved={isNew ? undefined : form.id} />
+            <SandboxEnv form={form} onSandbox={(sandbox) => set({ sandbox })} saved={isNew ? undefined : form.id} rev={saves} />
             <fieldset className="swatches">
               <legend>캐릭터 색</legend>
               {AVATAR_COLORS.map((c) => (

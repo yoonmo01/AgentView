@@ -449,3 +449,21 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 .form .field-error { color: #b42525; font-size: 12px; }
 .form input[aria-invalid='true'] { border-color: #e08a8a; }
 .form > .help { margin-top: -8px; }
+
+/* sandbox package picker */
+.pkg-picker { display: grid; gap: 6px; }
+.pkg-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 12px; }
+.pkg-toggle .count { font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: #8a5a00; }
+.pkg-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pkg-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 9px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; }
+.pkg-chip small { color: var(--muted); font-size: 10px; }
+.pkg-chip button { border: 0; background: transparent; padding: 0 4px; font-size: 10px; color: var(--muted); }
+.pkg-panel { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 10px 12px; display: grid; gap: 10px; max-height: 360px; overflow: auto; }
+.pkg-group { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.pkg-group > b { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.pkg-group small { color: var(--muted); font-size: 11px; }
+.pkg-custom { display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 8px; }
+.pkg-custom b { font-size: 12px; color: var(--muted); }
+.pkg-custom > div { display: flex; gap: 6px; }
+.pkg-custom > div input { flex: 1; }
+.pkg-custom select { width: auto; }
