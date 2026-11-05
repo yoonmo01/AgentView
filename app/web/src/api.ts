@@ -29,8 +29,8 @@ export const PATTERN_LABEL: Record<TeamDef['pattern'], string> = { supervisor: '
 export type ModelConn ={ id: string; baseURL: string; defaultModel?: string; maxTokens?: number };
 /** Mirrors the server's sessions (server/src/db.ts). `activity` content is a JSON list of Step. */
 export type Session = { id: string; target: string; title: string; createdAt: string; updatedAt: string };
-export type SessionMessage = { id: number; runId: string | null; role: 'user' | 'assistant' | 'activity' | 'error'; content: string; model: string | null; createdAt: string };
-export type { Step } from '../../server/src/summary.ts';
+export type SessionMessage = { id: number; runId: string | null; role: 'user' | 'assistant' | 'activity' | 'error' | 'usage'; content: string; model: string | null; createdAt: string };
+export type { Step, Usage } from '../../server/src/summary.ts';
 
 /** `server` is null for the built-in sandbox tools, else the MCP server name. */
 export type ToolInfo = { name: string; description: string; server: string | null };

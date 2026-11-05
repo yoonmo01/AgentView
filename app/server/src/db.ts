@@ -4,8 +4,8 @@ import pg from 'pg';
 export const DEFAULT_DB_URL = 'postgres://agentview:agentview@127.0.0.1:5433/agentview';
 
 export type Session = { id: string; target: string; title: string; createdAt: string; updatedAt: string };
-/** activity: JSON list of the run's steps (who did what with which tool). */
-export type Message = { id: number; runId: string | null; role: 'user' | 'assistant' | 'activity' | 'error'; content: string; model: string | null; createdAt: string };
+/** activity: JSON list of the run's steps (who did what with which tool). usage: JSON Usage of the run's model tokens. */
+export type Message = { id: number; runId: string | null; role: 'user' | 'assistant' | 'activity' | 'error' | 'usage'; content: string; model: string | null; createdAt: string };
 
 export type Db = Awaited<ReturnType<typeof createDb>>;
 

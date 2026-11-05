@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { EventType } from '@ag-ui/core';
 import type { Ev } from './events.ts';
 import { slotWatch } from './sandbox.ts';
-import type { Agent, ChatFn, ChatMessage, Defs, Team, ToolDef } from './store.ts';
+import type { Agent, ChatChunk, ChatFn, ChatMessage, Defs, Team, ToolDef } from './store.ts';
 
 export type Emit = (e: Ev) => void;
 export type Deps = {
@@ -86,7 +86,9 @@ async function callModel(agent: Agent, messages: ChatMessage[], tools: ToolDef[]
   const messageId = randomUUID();
   let text = '';
   const calls: { id: string; name: string; args: string }[] = [];
+  let usage: ChatChunk['usage'];
   for await (const chunk of stream) {
+    if (chunk.usage) usage = chunk.usage;
     const d = chunk.choices[0]?.delta;
     if (!d) continue;
     if (d.content) {
@@ -102,6 +104,7 @@ async function callModel(agent: Agent, messages: ChatMessage[], tools: ToolDef[]
     }
   }
   if (text) ctx.emit({ type: EventType.TEXT_MESSAGE_END, messageId });
+  if (usage) ctx.emit({ type: EventType.CUSTOM, name: 'agentview.usage', value: { agentId: agent.id, input: usage.prompt_tokens, output: usage.completion_tokens } });
   const toolCalls = calls.filter(Boolean).map((c) => ({
     id: c.id || randomUUID(),
     type: 'function' as const,

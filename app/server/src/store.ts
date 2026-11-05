@@ -191,6 +191,8 @@ export type ChatChunk = {
       tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[];
     };
   }[];
+  /** tokens of the whole reply, on the last chunk (requested with stream_options.include_usage) */
+  usage?: { prompt_tokens: number; completion_tokens: number } | null;
 };
 export type ChatFn = (req: ChatRequest, signal: AbortSignal) => Promise<AsyncIterable<ChatChunk>>;
 
@@ -213,6 +215,7 @@ export function openaiChat(connections: Connection[]): ChatFn {
         tools: req.tools.length ? (req.tools as CreateParams['tools']) : undefined,
         max_tokens: c.maxTokens ?? 1024, // token budget per model reply
         stream: true,
+        stream_options: { include_usage: true },
       },
       { signal },
     );

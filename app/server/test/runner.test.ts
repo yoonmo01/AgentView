@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Ev } from '../src/events.ts';
+import { sumUsage, type Ev } from '../src/events.ts';
 import { startRun, toChat, type Deps } from '../src/runner.ts';
 import { teamWithDefaults, type Agent, type ChatChunk, type ChatFn, type ChatRequest, type Defs, type Team } from '../src/store.ts';
 
@@ -158,6 +158,17 @@ describe('runner', () => {
     const [a, b] = await Promise.all([runTeam(chat, teams, 'a'), runTeam(chat, teams, 'b')]);
     expect(a.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'atlas done' });
     expect(b.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'nova done' });
+  });
+
+  it('reports model token usage per call, summed per agent', async () => {
+    const chat = byAgent({
+      atlas: [[...call('d1', 'delegate', { member: 'nova', task: 'x' }), { choices: [], usage: { prompt_tokens: 100, completion_tokens: 10 } }],
+        [...text('done'), { choices: [], usage: { prompt_tokens: 150, completion_tokens: 5 } }]],
+      nova: [[...text('ok'), { choices: [], usage: { prompt_tokens: 40, completion_tokens: 4 } }]],
+    });
+    const evs = await runTeam(chat, [team('dev', 'supervisor', 'atlas', ['nova'])]);
+    expect(sumUsage(evs)).toEqual({ input: 290, output: 19, by: { atlas: { input: 250, output: 15 }, nova: { input: 40, output: 4 } } });
+    expect(sumUsage(await run(script([text('hi')])))).toBeNull(); // the model sent no usage
   });
 
   it('supervisor: the main delegates to a member as a subagent and gets the result back', async () => {

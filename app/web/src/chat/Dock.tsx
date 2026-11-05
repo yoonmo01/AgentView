@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { summarizeRun } from '../../../server/src/summary.ts';
-import { api, PATTERN_LABEL, readSse, type AgentDef, type ModelConn, type Session, type SessionMessage, type Step, type TeamDef } from '../api.ts';
+import { summarizeRun, sumUsage } from '../../../server/src/summary.ts';
+import { api, PATTERN_LABEL, readSse, type AgentDef, type ModelConn, type Session, type SessionMessage, type Step, type TeamDef, type Usage } from '../api.ts';
 import { describeTool, displayStatus, type AgUiEvent, type OfficeState } from '../office/state.ts';
 import { Avatar, Chip, TeamMark, TeamMembers } from '../shell/ui.tsx';
 import { dayGroup, shortTime } from './dates.ts';
@@ -8,12 +8,31 @@ import { Files } from './Files.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { ask } from '../shell/ask.ts';
 
-type Line = { key: string; role: SessionMessage['role']; text: string; steps?: Step[]; model?: string | null; at?: string };
+type Line = { key: string; role: SessionMessage['role']; text: string; steps?: Step[]; model?: string | null; at?: string; usage?: Usage };
 
-const toLines = (ms: SessionMessage[]): Line[] => ms.map((m) => ({
-  key: String(m.id), role: m.role, text: m.content, model: m.model, at: m.createdAt,
-  ...(m.role === 'activity' ? { steps: JSON.parse(m.content) as Step[] } : {}),
-}));
+/** Session messages to chat lines; a run's token usage rides on that run's answer (or error) line. */
+const toLines = (ms: SessionMessage[]): Line[] => {
+  const usage = new Map(ms.filter((m) => m.role === 'usage').map((m) => [m.runId, JSON.parse(m.content) as Usage]));
+  return ms.filter((m) => m.role !== 'usage').map((m) => ({
+    key: String(m.id), role: m.role, text: m.content, model: m.model, at: m.createdAt,
+    ...(m.role === 'activity' ? { steps: JSON.parse(m.content) as Step[] } : {}),
+    ...(m.role !== 'activity' && m.role !== 'user' && usage.has(m.runId) ? { usage: usage.get(m.runId) } : {}),
+  }));
+};
+const n = (x: number) => x.toLocaleString('ko-KR');
+
+/** "입력 1,234 · 출력 56 토큰", with a per-agent breakdown when more than one agent used the model. */
+function Tokens({ usage, names }: { usage: Usage; names: (id: string) => string }) {
+  const by = Object.entries(usage.by);
+  const total = `입력 ${n(usage.input)} · 출력 ${n(usage.output)} 토큰`;
+  if (by.length < 2) return <small className="tokens">{total}</small>;
+  return (
+    <details className="tokens">
+      <summary>{total}</summary>
+      <ul>{by.map(([id, t]) => <li key={id}><b>{names(id)}</b> 입력 {n(t.input)} · 출력 {n(t.output)}</li>)}</ul>
+    </details>
+  );
+}
 
 function Activity({ steps, live }: { steps: Step[]; live?: boolean }) {
   if (!steps.length) return null;
@@ -121,8 +140,8 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
         const steps = summarizeRun(events);
         setLines((ls) => [...ls,
           ...(steps.length ? [{ key: `a-${runId}`, role: 'activity' as const, text: '', steps }] : []),
-          end?.type === 'RUN_FINISHED' ? { key: `r-${runId}`, role: 'assistant' as const, text: String(end.result ?? ''), model: model || defaultModel }
-            : { key: `e-${runId}`, role: 'error' as const, text: String(end?.message ?? '실행이 끝나지 않았어요') }]);
+          end?.type === 'RUN_FINISHED' ? { key: `r-${runId}`, role: 'assistant' as const, text: String(end.result ?? ''), model: model || defaultModel, usage: sumUsage(events) ?? undefined }
+            : { key: `e-${runId}`, role: 'error' as const, text: String(end?.message ?? '실행이 끝나지 않았어요'), usage: sumUsage(events) ?? undefined }]);
       } else {
         const s = await api<Session & { messages: SessionMessage[] }>(`/sessions/${sid}`);
         setLines(toLines(s.messages));
@@ -235,6 +254,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
               <div key={l.key} className={`msg msg-${l.role}`}>
                 <div className="text">{l.text}</div>
                 {(l.model || l.at) && <small>{[l.model, l.at && shortTime(l.at)].filter(Boolean).join(' · ')}</small>}
+                {l.usage && <Tokens usage={l.usage} names={(id) => agents.find((a) => a.id === id)?.name ?? id} />}
               </div>
             ))}
             {live && (
