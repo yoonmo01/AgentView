@@ -9,6 +9,7 @@ import {
   AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadAgent, loadConnections,
   resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
+import { deleteSkill, importSkill, listSkills, loadSkill, saveSkill, SKILL_ID } from './skills.ts';
 import { containerPath, listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
 
 const ID = RUN_ID.source;
@@ -40,6 +41,7 @@ const AGENT_BODY = {
     avatar: { type: 'object', additionalProperties: false, required: ['model', 'color'], properties: {
       model: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,60}\\.glb$' }, color: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' } } },
     maxSteps: { type: 'integer', minimum: 1, maximum: 20 },
+    skills: { type: 'array', maxItems: 50, uniqueItems: true, items: { type: 'string', pattern: SKILL_ID.source } },
   },
 };
 const TEAM_BODY = {
@@ -75,6 +77,7 @@ export function buildApp(opts: {
   dataDir: string; chat: ChatFn; exec?: ExecFn; files?: Files; mcp?: Mcp; db?: Db | null;
   /** removes the agent's container, and its files too when `files` */ removeSandbox?: (agentId: string, files: boolean) => Promise<void>;
   /** starts building the agent's sandbox image when it has extra packages */ prepareEnv?: (agent: Agent) => Promise<unknown>;
+  /** for copying skills from GitHub; tests pass a fake */ fetch?: typeof fetch;
 }) {
   const app = Fastify();
   const bus = createBus(path.join(opts.dataDir, 'runs'));
@@ -212,6 +215,36 @@ export function buildApp(opts: {
       }
     });
   }
+
+  // Skills: SKILL.md folders in data/skills, made here or copied from GitHub
+  const skillParams = { type: 'object', required: ['id'], properties: { id: { type: 'string', pattern: SKILL_ID.source } } };
+  const SKILL_BODY = { type: 'object', additionalProperties: false, required: ['name', 'description', 'body'], properties: {
+    name: { type: 'string', minLength: 1, maxLength: 80 }, description: { type: 'string', maxLength: 1000 }, body: { type: 'string', maxLength: 100_000 },
+    allowedTools: { type: 'array', maxItems: 50, items: { type: 'string', pattern: '^[A-Za-z0-9_*()-]{1,80}$' } },
+  } };
+  app.get('/skills', async () => listSkills(opts.dataDir));
+  app.get('/skills/:id', { schema: { params: skillParams } }, async (req, reply) =>
+    loadSkill(opts.dataDir, (req.params as { id: string }).id).catch(() => reply.code(404).send({ error: 'skill not found' })));
+  app.put('/skills/:id', { schema: { params: skillParams, body: SKILL_BODY } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const existing = await loadSkill(opts.dataDir, id).catch(() => null);
+    if (existing && existing.source !== 'local') return reply.code(409).send({ error: 'copied skills are read-only: copy it again from its source to update' });
+    const b = req.body as { name: string; description: string; body: string; allowedTools?: string[] };
+    await saveSkill(opts.dataDir, id, { ...b, allowedTools: b.allowedTools ?? [] });
+    return loadSkill(opts.dataDir, id);
+  });
+  app.post('/skills/import', { schema: { body: { type: 'object', required: ['url'], additionalProperties: false, properties: { url: { type: 'string', maxLength: 500 } } } } },
+    async (req, reply) => {
+      try {
+        return await loadSkill(opts.dataDir, await importSkill(opts.dataDir, (req.body as { url: string }).url, opts.fetch));
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
+    });
+  app.delete('/skills/:id', { schema: { params: skillParams } }, async (req, reply) => {
+    await deleteSkill(opts.dataDir, (req.params as { id: string }).id);
+    return reply.code(204).send();
+  });
 
   app.get('/teams', async () => listTeams(opts.dataDir));
 

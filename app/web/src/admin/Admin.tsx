@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Agents } from './Agents.tsx';
+import { Skills } from './Skills.tsx';
 import { Teams } from './Teams.tsx';
 import { Tools } from './Tools.tsx';
 
-export const SETTINGS_TABS = { agents: '에이전트', teams: '팀', tools: '도구' } as const;
+export const SETTINGS_TABS = { agents: '에이전트', teams: '팀', tools: '도구', skills: '스킬' } as const;
 export type SettingsTab = keyof typeof SETTINGS_TABS;
 
 /** Settings drawer over the office: agents, teams and tools (built-in and MCP). Closed most of the time. */
@@ -26,7 +27,8 @@ export function Settings({ open, tab, focus, onTab, onClose, onChanged }: {
       {/* key: remount so `focus` applies when the drawer is reopened on another agent or team */}
       {tab === 'agents' ? <Agents key={`a-${focus}-${rev}`} focus={focus} onChanged={onChanged} />
         : tab === 'teams' ? <Teams key={`t-${focus}-${rev}`} focus={focus} onChanged={onChanged} />
-        : <Tools key={rev} onChanged={onChanged} />}
+        : tab === 'tools' ? <Tools key={rev} onChanged={onChanged} />
+        : <Skills key={rev} />}
     </aside>
   );
 }

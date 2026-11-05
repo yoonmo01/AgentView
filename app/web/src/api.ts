@@ -10,6 +10,7 @@ export type AgentDef = {
   sandbox: { image: string; network: boolean; packages?: { pip: string[]; npm: string[]; apt: string[] } };
   avatar: { model: string; color: string };
   maxSteps: number;
+  skills?: string[];
 };
 /** Mirrors the server's Team. Members are agent ids or `team:<id>`. */
 export type TeamDef = {
@@ -73,3 +74,6 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
+
+/** Mirrors server/src/skills.ts. `source` is "local" for skills made here, else where it was copied from. */
+export type SkillInfo = { id: string; name: string; description: string; allowedTools: string[]; source: string; files: string[] };
