@@ -4,12 +4,12 @@ import type { Db } from './db.ts';
 import { createBus, RUN_ID, summarizeRun, type Ev } from './events.ts';
 import { createMcp, MCP_NAME, parseConfig, type Mcp, type McpConfig } from './mcp.ts';
 import { startRun, type AgUiMessage, type Deps } from './runner.ts';
-import { listFiles, readFile, removeContainer, runInSandbox, workspaceDir } from './sandbox.ts';
+import { dockerFiles, NotFound, removeContainer, removeWorkVolume, runInSandbox, type Files } from './sandbox.ts';
 import {
   AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadConnections,
   resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
-import { listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
+import { containerPath, listTools, runTool, shown, toolDefs, type ExecFn } from './tools.ts';
 
 const ID = RUN_ID.source;
 const TARGET = '^(agent|team):[a-z0-9][a-z0-9-]{0,40}$';
@@ -65,11 +65,16 @@ function sse(reply: FastifyReply) {
   return (id: string, e: Ev) => { reply.raw.write(`id: ${id}\ndata: ${JSON.stringify(e)}\n\n`); };
 }
 
-export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; removeSandbox?: (agentId: string) => Promise<void>; mcp?: Mcp; db?: Db | null }) {
+export function buildApp(opts: {
+  dataDir: string; chat: ChatFn; exec?: ExecFn; files?: Files; mcp?: Mcp; db?: Db | null;
+  /** removes the agent's container, and its files too when `files` */ removeSandbox?: (agentId: string, files: boolean) => Promise<void>;
+}) {
   const app = Fastify();
   const bus = createBus(path.join(opts.dataDir, 'runs'));
   const running = new Map<string, AbortController>();
   const exec: ExecFn = opts.exec ?? ((agent, command, timeoutSec, signal) => runInSandbox(agent, opts.dataDir, command, timeoutSec, signal));
+  const files = opts.files ?? dockerFiles(opts.dataDir);
+  const removeSandbox = opts.removeSandbox ?? (async (id: string, withFiles: boolean) => { await removeContainer(id); if (withFiles) await removeWorkVolume(id); });
   const mcp = opts.mcp ?? createMcp(opts.dataDir);
   void mcp.load(); // servers connect in the background; their status shows on /mcp
   app.addHook('onClose', async () => { await mcp.closeAll(); });
@@ -88,7 +93,7 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     toolDefs: (agent) => [...toolDefs(agent), ...mcp.defs(agent.tools)],
     runTool: (agent, name, args, signal) => name.startsWith('mcp__')
       ? mcpTool(agent.tools, name, args, signal)
-      : runTool(agent, name, args, signal, { dataDir: opts.dataDir, exec }),
+      : runTool(agent, name, args, signal, { files, exec }),
   };
 
   // Agent definitions hold no secrets (keys stay in env), so the admin screen gets them whole.
@@ -117,30 +122,60 @@ export function buildApp(opts: { dataDir: string; chat: ChatFn; exec?: ExecFn; r
     return save(id, req.body as Partial<Agent>, reply, 200);
   });
 
-  app.delete('/agents/:id', { schema: { params: agentParams } }, async (req, reply) => {
+  app.delete('/agents/:id', { schema: { params: agentParams, querystring: { type: 'object', properties: { files: { type: 'boolean' } } } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!agentExists(opts.dataDir, id)) return reply.code(404).send({ error: 'agent not found' });
     const user = (await listTeams(opts.dataDir)).find((t) => t.main === id || t.members.includes(id));
     if (user) return reply.code(409).send({ error: `used by team ${user.id}` });
     await deleteAgent(opts.dataDir, id);
-    await (opts.removeSandbox ?? removeContainer)(id).catch(() => {}); // workspace files stay on the host
+    await removeSandbox(id, (req.query as { files?: boolean }).files === true).catch(() => {}); // files stay unless asked
     return reply.code(204).send();
   });
 
+  /** The agent with its teams (they decide the sandbox mounts), or null. */
+  const withTeams = async (id: string) => agentExists(opts.dataDir, id) ? (await resolve(opts.dataDir, `agent:${id}`)).agents.get(id)! : null;
+  /** A missing file is 404; anything else means the sandbox could not be reached (Docker off, image missing). */
+  const fileError = (reply: FastifyReply, e: unknown) => reply.code(e instanceof NotFound ? 404 : 503).send({ error: (e as Error).message });
+
   app.get('/agents/:id/files', { schema: { params: agentParams } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    if (!agentExists(opts.dataDir, id)) return reply.code(404).send({ error: 'agent not found' });
-    return listFiles(workspaceDir(opts.dataDir, id));
+    const agent = await withTeams((req.params as { id: string }).id);
+    if (!agent) return reply.code(404).send({ error: 'agent not found' });
+    try {
+      return (await files.list(agent, '/work')).map(shown);
+    } catch (e) {
+      return fileError(reply, e);
+    }
   });
 
-  app.get('/agents/:id/files/*', { schema: { params: agentParams } }, async (req, reply) => {
+  app.get('/agents/:id/files/*', { schema: { params: agentParams, querystring: { type: 'object', properties: { download: { type: 'boolean' } } } } }, async (req, reply) => {
     const { id, '*': rel } = req.params as { id: string; '*': string };
-    if (!agentExists(opts.dataDir, id)) return reply.code(404).send({ error: 'agent not found' });
+    const agent = await withTeams(id);
+    if (!agent) return reply.code(404).send({ error: 'agent not found' });
+    let file: string;
     try {
-      const text = await readFile(workspaceDir(opts.dataDir, id), rel);
-      return reply.type('text/plain; charset=utf-8').send(text);
+      file = containerPath(agent, rel);
     } catch (e) {
-      return reply.code((e as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 400).send({ error: (e as Error).message });
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+    try {
+      const body = await files.read(agent, file);
+      if (!(req.query as { download?: boolean }).download) return reply.type('text/plain; charset=utf-8').send(body);
+      return reply.type('application/octet-stream')
+        .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(path.posix.basename(file))}`).send(body);
+    } catch (e) {
+      return fileError(reply, e);
+    }
+  });
+
+  app.get('/agents/:id/zip', { schema: { params: agentParams } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const agent = await withTeams(id);
+    if (!agent) return reply.code(404).send({ error: 'agent not found' });
+    try {
+      const body = await files.zip(agent, '/work');
+      return reply.type('application/zip').header('content-disposition', `attachment; filename="${id}-work.zip"`).send(body);
+    } catch (e) {
+      return fileError(reply, e);
     }
   });
 

@@ -7,6 +7,7 @@ import { buildApp } from '../src/index.ts';
 import { createMcp, type Mcp } from '../src/mcp.ts';
 import type { ChatFn } from '../src/store.ts';
 import { memoryTransport } from './mcp.test.ts';
+import { memFiles } from './memFiles.ts';
 
 const apps: ReturnType<typeof buildApp>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map((a) => a.close())); });
@@ -14,13 +15,17 @@ afterEach(async () => { await Promise.all(apps.splice(0).map((a) => a.close()));
 const hello: ChatFn = async () => (async function* () { yield { choices: [{ delta: { content: 'hello' } }] }; })();
 
 let dataDir = '';
+let files = memFiles();
+let removed: [string, boolean][] = [];
 async function start(chat: ChatFn = hello, mcp?: Mcp) {
   dataDir = mkdtempSync(path.join(tmpdir(), 'av-app-'));
+  files = memFiles();
+  removed = [];
   mkdirSync(path.join(dataDir, 'agents'));
   writeFileSync(path.join(dataDir, 'agents', 'nova.json'), JSON.stringify({ name: 'Nova', connection: 'c', model: 'm' }));
   writeFileSync(path.join(dataDir, 'models.json'), JSON.stringify([{ id: 'c', baseURL: 'http://x', apiKeyEnv: 'NOPE', defaultModel: 'm' }]));
   const app = buildApp({
-    dataDir, chat, exec: async () => { throw new Error('no docker in this test'); }, removeSandbox: async () => {},
+    dataDir, chat, files, exec: async () => { throw new Error('no docker in this test'); }, removeSandbox: async (id, withFiles) => { removed.push([id, withFiles]); },
     mcp: mcp ?? createMcp(dataDir, { cleanup: async () => {} }),
   });
   apps.push(app);
@@ -92,7 +97,8 @@ describe('http api', () => {
 
     expect((await send('PUT', '/agents/milo', { ...milo, name: 'Milo 2', maxSteps: 3 })).status).toBe(200);
     expect((await (await fetch(`${url}/agents`)).json()).map((a: { name: string }) => a.name)).toEqual(['Milo 2', 'Nova']);
-    expect((await send('DELETE', '/agents/milo')).status).toBe(204);
+    expect((await send('DELETE', '/agents/milo?files=true')).status).toBe(204);
+    expect(removed).toEqual([['milo', true]]);
     expect((await send('PUT', '/agents/milo', milo)).status).toBe(404);
   });
 
@@ -149,10 +155,12 @@ describe('http api', () => {
 
   it('serves workspace files, models and tools', async () => {
     const url = await start();
-    mkdirSync(path.join(dataDir, 'workspaces', 'nova', 'src'), { recursive: true });
-    writeFileSync(path.join(dataDir, 'workspaces', 'nova', 'src', 'a.py'), 'print(1)');
+    files.put('nova', '/work/src/a.py', 'print(1)');
     expect(await (await fetch(`${url}/agents/nova/files`)).json()).toEqual(['src/a.py']);
     expect(await (await fetch(`${url}/agents/nova/files/src/a.py`)).text()).toBe('print(1)');
+    const dl = await fetch(`${url}/agents/nova/files/src/a.py?download=true`);
+    expect(dl.headers.get('content-disposition')).toBe("attachment; filename*=UTF-8''a.py");
+    expect((await fetch(`${url}/agents/nova/zip`)).headers.get('content-type')).toBe('application/zip');
     expect((await fetch(`${url}/agents/nova/files/nope.txt`)).status).toBe(404);
     expect((await fetch(`${url}/agents/nova/files/..%2F..%2Fmodels.json`)).status).toBe(400);
     expect((await fetch(`${url}/agents/ghost/files`)).status).toBe(404);

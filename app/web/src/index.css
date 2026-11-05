@@ -142,6 +142,17 @@ li.fold { list-style: none; }
 .files { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; }
 .files button { width: 100%; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .files button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
+.files .files { padding-left: 14px; margin-top: 4px; }
+.files summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); padding: 2px 0; list-style: none; }
+.files summary::before { content: '▸ '; display: inline-block; transition: transform 0.15s; }
+.files details[open] > summary::before { transform: rotate(90deg); }
+.files-side { display: grid; gap: 8px; align-content: start; }
+.files-open { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.files-head { display: flex; align-items: center; gap: 8px; }
+.files-head code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.files-view .files-open pre { max-height: none; margin: 0; }
+a.button { display: inline-block; text-align: center; text-decoration: none; color: inherit; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 4px 10px; font-size: 12px; }
+a.button:hover { border-color: var(--accent); }
 
 /* shared bits used by the settings forms */
 .tabs { display: flex; gap: 4px; margin: 8px 0; }
