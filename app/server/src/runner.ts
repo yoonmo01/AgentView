@@ -17,8 +17,9 @@ type Ctx = Deps & {
   depth: number;
   maxDepth: number;
   subId?: string; // current subagentRunId; undefined for the run's main agent
-  held: Set<string>; // agents this run already holds, so nested re-entry does not wait on itself
 };
+/** The calling agent's turn: given up while it waits on members, taken back (ahead of the line) to continue. */
+type Seat = { take: (first: boolean) => Promise<void>; free: () => void };
 /** A tool that exists only inside a pattern (delegate), run with the calling agent's ctx. */
 type Extra = { def: ToolDef; run: (args: Record<string, unknown>, toolCallId: string, ctx: Ctx) => Promise<string> };
 
@@ -49,25 +50,32 @@ export function toChat(messages: AgUiMessage[]): ChatMessage[] {
   });
 }
 
-const locks = new Map<string, Promise<void>>();
+type Line = { busy: boolean; waiting: (() => void)[] };
+const lines = new Map<string, Line>();
 
-/** One job at a time per agent: an agent is one character with one sandbox. */
-export async function withAgentLock<T>(agentId: string, onWait: () => void, fn: () => Promise<T>): Promise<T> {
-  const prev = locks.get(agentId);
-  let release!: () => void;
-  const mine = new Promise<void>((r) => { release = r; });
-  const chain = (prev ?? Promise.resolve()).then(() => mine);
-  locks.set(agentId, chain);
-  if (prev) {
-    onWait();
-    await prev;
-  }
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (locks.get(agentId) === chain) locks.delete(agentId);
-  }
+/**
+ * One job at a time per agent (one character, one workspace): jobs wait in the agent's line.
+ * `first` puts a job at the head, for a job coming back after waiting on its members. Cancelling leaves the line.
+ */
+function turn(agentId: string, signal: AbortSignal, first: boolean, onWait: () => void): Promise<void> {
+  signal.throwIfAborted();
+  let line = lines.get(agentId);
+  if (!line) lines.set(agentId, (line = { busy: false, waiting: [] }));
+  if (!line.busy) { line.busy = true; return Promise.resolve(); }
+  onWait();
+  const l = line;
+  return new Promise((resolve, reject) => {
+    const go = () => { signal.removeEventListener('abort', leave); resolve(); };
+    const leave = () => { l.waiting.splice(l.waiting.indexOf(go), 1); reject(signal.reason); };
+    signal.addEventListener('abort', leave, { once: true });
+    if (first) l.waiting.unshift(go); else l.waiting.push(go);
+  });
+}
+/** Hand the agent to the next job in line, or mark it free. */
+function pass(agentId: string): void {
+  const line = lines.get(agentId)!;
+  const next = line.waiting.shift();
+  if (next) next(); else line.busy = false;
 }
 
 async function callModel(agent: Agent, messages: ChatMessage[], tools: ToolDef[], ctx: Ctx): Promise<ChatMessage> {
@@ -110,24 +118,38 @@ async function runExtra(extra: Extra, rawArgs: string, toolCallId: string, ctx: 
   }
 }
 
-async function runAgent(agent: Agent, input: ChatMessage[], ctx: Ctx, extra?: Extra): Promise<string> {
+async function runAgent(agent: Agent, input: ChatMessage[], ctx: Ctx, seat: Seat, extra?: Extra): Promise<string> {
   const messages: ChatMessage[] = [{ role: 'system', content: agent.systemPrompt }, ...input];
   const tools = [...ctx.toolDefs(agent), ...(extra ? [extra.def] : [])];
+  const handsOff = (c: { function: { name: string } }) => !!extra && c.function.name === extra.def.function.name;
   for (let step = 0; step < agent.maxSteps; step++) {
     const msg = await callModel(agent, messages, tools, ctx);
     messages.push(msg);
     if (!msg.tool_calls) return msg.content ?? '';
-    const results = await Promise.all(msg.tool_calls.map(async (c) => {
+    const calls = msg.tool_calls;
+    for (const c of calls) {
       ctx.emit({ type: EventType.TOOL_CALL_START, toolCallId: c.id, toolCallName: c.function.name });
       ctx.emit({ type: EventType.TOOL_CALL_ARGS, toolCallId: c.id, delta: c.function.arguments });
       ctx.emit({ type: EventType.TOOL_CALL_END, toolCallId: c.id });
-      const content = extra && c.function.name === extra.def.function.name
-        ? await runExtra(extra, c.function.arguments, c.id, ctx)
-        : await ctx.runTool(agent, c.function.name, c.function.arguments, ctx.signal);
-      ctx.emit({ type: EventType.TOOL_CALL_RESULT, messageId: randomUUID(), toolCallId: c.id, content, role: 'tool' });
-      return content;
-    }));
-    msg.tool_calls.forEach((c, i) => messages.push({ role: 'tool', tool_call_id: c.id, content: results[i] }));
+    }
+    const results = new Map<string, string>();
+    const done = (id: string, content: string) => {
+      results.set(id, content);
+      ctx.emit({ type: EventType.TOOL_CALL_RESULT, messageId: randomUUID(), toolCallId: id, content, role: 'tool' });
+    };
+    // own tools run while the agent holds its turn
+    await Promise.all(calls.filter((c) => !handsOff(c)).map(async (c) => done(c.id, await ctx.runTool(agent, c.function.name, c.function.arguments, ctx.signal))));
+    // while members work, the agent is only waiting: let its next job in line run meanwhile (members may even need this agent)
+    const handed = calls.filter(handsOff);
+    if (handed.length) {
+      seat.free();
+      try {
+        await Promise.all(handed.map(async (c) => done(c.id, await runExtra(extra!, c.function.arguments, c.id, ctx))));
+      } finally {
+        await seat.take(true);
+      }
+    }
+    calls.forEach((c) => messages.push({ role: 'tool', tool_call_id: c.id, content: results.get(c.id) ?? '' }));
   }
   throw new LimitError(`maxSteps (${agent.maxSteps}) exceeded`);
 }
@@ -141,19 +163,20 @@ async function run(name: string, input: ChatMessage[], ctx: Ctx, extra?: Extra):
   if (team) return patterns[team.pattern](team, input, ctx);
   const agent = ctx.defs.agents.get(name);
   if (!agent) throw new Error(`unknown agent: ${name}`);
-  if (ctx.held.has(agent.id)) return runAgent(agent, input, ctx, extra);
-  return withAgentLock(
-    agent.id,
-    () => ctx.emit({ type: EventType.CUSTOM, name: 'agentview.queued', value: { agentId: agent.id } }),
-    async () => {
-      ctx.held.add(agent.id);
-      try {
-        return await runAgent(agent, input, ctx, extra);
-      } finally {
-        ctx.held.delete(agent.id);
-      }
+  let held = false;
+  const seat: Seat = {
+    take: async (first) => {
+      await turn(agent.id, ctx.signal, first, () => ctx.emit({ type: EventType.CUSTOM, name: 'agentview.queued', value: { agentId: agent.id } }));
+      held = true;
     },
-  );
+    free: () => { if (held) { held = false; pass(agent.id); } },
+  };
+  await seat.take(false);
+  try {
+    return await runAgent(agent, input, ctx, seat, extra);
+  } finally {
+    seat.free();
+  }
 }
 
 /** Run a member as a subagent: its events carry its own subagentRunId; nested ones keep theirs. */
@@ -272,7 +295,7 @@ export async function startRun(
     },
   });
   const ctx: Ctx = {
-    ...deps, emit, signal, defs, depth: 0, held: new Set(),
+    ...deps, emit, signal, defs, depth: 0,
     calls: { left: input.maxCalls ?? team?.limits.maxCalls ?? 20 },
     maxDepth: team?.limits.maxDepth ?? 3,
   };

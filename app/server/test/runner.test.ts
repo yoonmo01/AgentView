@@ -103,6 +103,63 @@ describe('runner', () => {
     expect(b.some((e) => e.name === 'agentview.queued')).toBe(true);
   });
 
+  it('leaves the line when cancelled while waiting', async () => {
+    const slow: ChatFn = async () => (async function* () {
+      await new Promise((r) => setTimeout(r, 150));
+      yield { choices: [{ delta: { content: 'ok' } }] };
+    })();
+    const ac = new AbortController();
+    const first = run(slow, { runId: 'a' });
+    const t0 = Date.now();
+    const second = run(slow, { runId: 'b', signal: ac.signal });
+    setTimeout(() => ac.abort(), 10);
+    expect((await second).at(-1)).toMatchObject({ type: 'RUN_ERROR', code: 'cancelled' });
+    expect(Date.now() - t0).toBeLessThan(100); // did not wait for the first job
+    expect((await first).at(-1)).toMatchObject({ type: 'RUN_FINISHED' });
+    expect((await run(script([text('next')]))).at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'next' }); // line still moves
+  });
+
+  it('two tasks handed to the same member at once run one after the other', async () => {
+    const order: string[] = [];
+    const chat: ChatFn = async (req) => {
+      const who = String(req.messages[0].content);
+      const last = req.messages.at(-1)!;
+      return (async function* () {
+        if (who === 'atlas' && last.role !== 'tool' && req.messages.every((m) => m.role !== 'tool')) {
+          yield { choices: [{ delta: { tool_calls: [
+            { index: 0, id: 'd1', function: { name: 'delegate', arguments: '{"member":"nova","task":"one"}' } },
+            { index: 1, id: 'd2', function: { name: 'delegate', arguments: '{"member":"nova","task":"two"}' } },
+          ] } }] };
+          return;
+        }
+        if (who === 'nova') {
+          order.push(`start ${last.content}`);
+          await new Promise((r) => setTimeout(r, 20));
+          order.push(`end ${last.content}`);
+        }
+        yield { choices: [{ delta: { content: `${who}: ok` } }] };
+      })();
+    };
+    const evs = await runTeam(chat, [team('dev', 'supervisor', 'atlas', ['nova', 'milo'])]);
+    expect(order).toEqual(['start one', 'end one', 'start two', 'end two']);
+    expect(evs.at(-1)).toMatchObject({ type: 'RUN_FINISHED' });
+  });
+
+  it('two teams asking each other\'s main for help both finish: waiting on a member frees the agent', async () => {
+    const chat: ChatFn = async (req) => {
+      const who = String(req.messages[0].content);
+      const last = req.messages.at(-1)!;
+      if (last.role !== 'tool' && last.content !== 'help') await new Promise((r) => setTimeout(r, 20)); // both teams start first
+      const chunks = last.role === 'tool' ? text(`${who} done`) : last.content === 'help' ? text(`${who} helped`)
+        : call(`d-${who}`, 'delegate', { member: who === 'atlas' ? 'nova' : 'atlas', task: 'help' });
+      return (async function* () { yield* chunks; })();
+    };
+    const teams = [team('a', 'supervisor', 'atlas', ['nova']), team('b', 'supervisor', 'nova', ['atlas'])];
+    const [a, b] = await Promise.all([runTeam(chat, teams, 'a'), runTeam(chat, teams, 'b')]);
+    expect(a.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'atlas done' });
+    expect(b.at(-1)).toMatchObject({ type: 'RUN_FINISHED', result: 'nova done' });
+  });
+
   it('supervisor: the main delegates to a member as a subagent and gets the result back', async () => {
     const seen: ChatRequest[] = [];
     const evs = await runTeam(byAgent({ atlas: [call('d1', 'delegate', { member: 'nova', task: 'write it' }), text('all done')] }, seen),
@@ -151,7 +208,7 @@ describe('runner', () => {
     expect(seen.at(-1)!.messages.at(-1)!.content).toContain('사회자');
   });
 
-  it('nested team: the inner main runs as its own subagent and re-entering a held agent does not deadlock', async () => {
+  it('nested team: the inner main runs as its own subagent and the same agent on both levels takes turns', async () => {
     const evs = await runTeam(byAgent({}), [team('outer', 'parallel', 'atlas', ['team:inner']), team('inner', 'parallel', 'atlas', ['nova'])]);
     const [inner, ...rest] = subs(evs);
     expect(inner).toMatchObject({ name: 'team:inner' });

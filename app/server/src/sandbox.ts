@@ -101,6 +101,7 @@ const idleTimers = new Map<string, NodeJS.Timeout>();
 const IDLE_MS = 30 * 60_000;
 
 export async function runInSandbox(agent: Agent, dataDir: string, command: string, timeoutSec: number, signal: AbortSignal): Promise<ExecResult> {
+  clearTimeout(idleTimers.get(agent.id)); // an idle stop from the last job must not hit this one
   await ensureContainer(agent, dataDir);
   const name = containerName(agent.id);
   // Ending the docker CLI leaves the process running inside the container, so cancelling kills the container.
@@ -113,9 +114,14 @@ export async function runInSandbox(agent: Agent, dataDir: string, command: strin
     return r;
   } finally {
     signal.removeEventListener('abort', onAbort);
-    clearTimeout(idleTimers.get(agent.id));
     idleTimers.set(agent.id, setTimeout(() => { void run(['stop', name]); }, IDLE_MS).unref());
   }
+}
+
+/** Idle timers live in this process, so at start stop agent sandboxes a previous run left running (the database has no such label). */
+export async function stopLeftoverSandboxes(): Promise<void> {
+  const ids = (await run(['ps', '-q', '--filter', 'label=agentview.config']).catch(() => null))?.stdout.split(/\s+/).filter(Boolean) ?? [];
+  if (ids.length) await run(['stop', ...ids]).catch(() => {});
 }
 
 export async function removeContainer(agentId: string): Promise<void> {
