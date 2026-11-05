@@ -122,8 +122,10 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
     e?.preventDefault();
     const content = text.trim();
     if (!content || !target || live) return;
-    const sid = sessionId ?? crypto.randomUUID();
-    const runId = crypto.randomUUID();
+    // randomUUID only exists on https/localhost; opened by IP over http, getRandomValues still works
+    const uuid = () => crypto.randomUUID?.() ?? '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16));
+    const sid = sessionId ?? uuid();
+    const runId = uuid();
     const history = lines.filter((l) => l.role === 'user' || l.role === 'assistant').map((l) => ({ id: l.key, role: l.role, content: l.text }));
     setText('');
     setError(null);
