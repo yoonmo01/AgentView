@@ -114,16 +114,17 @@ export function Teams({ focus, onChanged }: { focus?: string; onChanged?: () => 
             </label>
             <fieldset className="order">
               <legend>{form.pattern === 'debate' ? '발언 순서' : '구성원'}</legend>
-              {/* the array order is the speaking order: move with the arrows or by dragging a row */}
-              <ol>
+              {/* only a debate's order means something (speaking order): other patterns get no arrows or dragging */}
+              <ol className={form.pattern === 'debate' ? undefined : 'plain'}>
                 {form.members.map((m, i) => {
                   const c = candidates.find((x) => x.value === m);
+                  const ordered = form.pattern === 'debate';
                   return (
-                    <li key={m} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', String(i))}
-                      onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); move(Number(e.dataTransfer.getData('text/plain')), i); }}>
-                      <span className="num">{i + 1}</span>{c?.mark}<b>{c?.label ?? m}</b><small>{c?.note}</small>
-                      <button type="button" className="icon" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`${c?.label ?? m} 위로`}>↑</button>
-                      <button type="button" className="icon" onClick={() => move(i, i + 1)} disabled={i === form.members.length - 1} aria-label={`${c?.label ?? m} 아래로`}>↓</button>
+                    <li key={m} draggable={ordered} onDragStart={ordered ? (e) => e.dataTransfer.setData('text/plain', String(i)) : undefined}
+                      onDragOver={ordered ? (e) => e.preventDefault() : undefined} onDrop={ordered ? (e) => { e.preventDefault(); move(Number(e.dataTransfer.getData('text/plain')), i); } : undefined}>
+                      {ordered && <span className="num">{i + 1}</span>}{c?.mark}<b>{c?.label ?? m}</b><small>{c?.note}</small>
+                      {ordered && <button type="button" className="icon" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`${c?.label ?? m} 위로`}>↑</button>}
+                      {ordered && <button type="button" className="icon" onClick={() => move(i, i + 1)} disabled={i === form.members.length - 1} aria-label={`${c?.label ?? m} 아래로`}>↓</button>}
                       <button type="button" className="icon" onClick={() => set({ members: form.members.filter((x) => x !== m) })} aria-label={`${c?.label ?? m} 빼기`}>✕</button>
                     </li>
                   );

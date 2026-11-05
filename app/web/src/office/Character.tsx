@@ -19,6 +19,7 @@ export function placeLabel(el: HTMLElement, x: number, y: number, z: number, cam
 }
 
 const SPEED = 1.6;
+const MAX_TRIP = 2; // seconds to reach a work seat: far seats are walked faster
 const SKIN = '#ffe0bd';
 
 export function Character({ agent, seat, goal, face, mode, status, ring, lounge: spots, onSelect, label, positions, grid }: {
@@ -33,7 +34,7 @@ export function Character({ agent, seat, goal, face, mode, status, ring, lounge:
   const legL = useRef<Group>(null);
   const legR = useRef<Group>(null);
   const wander = useRef({ x: seat.x, z: seat.z, until: 0 });
-  const route = useRef<{ key: string; points: Vec2[] }>({ key: '', points: [] });
+  const route = useRef<{ key: string; points: Vec2[]; speed: number }>({ key: '', points: [], speed: SPEED });
   useEffect(() => { root.current?.position.set(seat.x, 0, seat.z); }, []);
   useEffect(() => { route.current.key = ''; }, [grid]); // furniture moved: plan again
 
@@ -56,10 +57,15 @@ export function Character({ agent, seat, goal, face, mode, status, ring, lounge:
       to = wander.current;
     }
     const key = `${to.x.toFixed(2)},${to.z.toFixed(2)}`;
-    if (route.current.key !== key) route.current = { key, points: findPath(grid, { x: g.position.x, z: g.position.z }, to) };
+    if (route.current.key !== key) {
+      const points = findPath(grid, { x: g.position.x, z: g.position.z }, to);
+      let length = 0, from: Vec2 = { x: g.position.x, z: g.position.z };
+      for (const p of points) { length += Math.hypot(p.x - from.x, p.z - from.z); from = p; }
+      route.current = { key, points, speed: mode === 'idle' ? SPEED : Math.max(SPEED, length / MAX_TRIP) };
+    }
     const pts = route.current.points;
     let walking = false;
-    let budget = Math.min(dt, 0.1) * SPEED; // clamp: a paused tab must not teleport through a wall on resume
+    let budget = Math.min(dt, 0.1) * route.current.speed; // clamp: a paused tab must not teleport through a wall on resume
     while (pts.length && budget > 0) {
       const dx = pts[0].x - g.position.x;
       const dz = pts[0].z - g.position.z;
