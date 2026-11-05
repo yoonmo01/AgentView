@@ -303,12 +303,14 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 /* team structure picture and per-team roles (settings › 팀) */
 .team-diagram { margin: 0; padding: 10px 8px 8px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .team-diagram svg { width: 100%; height: auto; display: block; color: #8d867a; }
-.team-diagram path { fill: none; stroke: currentColor; stroke-width: 1.5; }
-.team-diagram path.back { stroke-dasharray: 4 4; opacity: 0.7; }
+.team-diagram .hub { fill: var(--surface); stroke: #cfc7b8; }
 .team-diagram .init { fill: #fff; font-size: 12px; font-weight: 700; }
 .team-diagram .name { fill: var(--text); font-size: 11.5px; font-weight: 600; }
 .team-diagram .cap { fill: var(--muted); font-size: 11px; }
-.team-diagram figcaption { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
+.team-diagram figcaption { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; display: grid; gap: 4px; }
+.team-diagram .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
+.team-diagram .legend > span { display: inline-flex; align-items: center; gap: 5px; color: var(--text); white-space: nowrap; }
+.team-diagram .legend svg { flex: none; width: 26px; height: 8px; display: inline; }
 .form fieldset.roles { display: grid; gap: 6px; }
 .roles details { border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .roles summary { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; list-style: none; }
