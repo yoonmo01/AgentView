@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { rename } from 'node:fs/promises';
 import path from 'node:path';
-import type { Agent } from './store.ts';
+import type { Agent, Packages } from './store.ts';
 
 /** Where agent and team files lived before they moved into Docker volumes: read once to move them in. */
 export const workspaceDir = (dataDir: string, agentId: string) => path.resolve(dataDir, 'workspaces', agentId);
@@ -38,7 +39,7 @@ async function docker(args: string[]): Promise<string> {
 }
 
 // joining or leaving a team changes the mounts, so it recreates the container like an image change does; v2 = files in volumes
-const configLabel = (a: Agent) => `v2|${a.sandbox.image}|net=${a.sandbox.network}|teams=${(a.teams ?? []).join(',')}`;
+const configLabel = (a: Agent, image: string) => `v2|${image}|net=${a.sandbox.network}|teams=${(a.teams ?? []).join(',')}`;
 
 /** Files from before volumes: move the old host folder aside first so it is copied in only once (the user deletes it later). */
 async function moveIn(dir: string, name: string, dest: string): Promise<void> {
@@ -51,10 +52,11 @@ async function moveIn(dir: string, name: string, dest: string): Promise<void> {
 /** Create, start or recreate the agent's container. Files live in volumes, so recreating is safe. */
 export async function ensureContainer(agent: Agent, dataDir: string): Promise<void> {
   const name = containerName(agent.id);
+  const image = await imageFor(agent); // a newly built package image swaps the container on its next use; files stay in the volume
   const state = await docker(['inspect', '-f', '{{.State.Running}} {{index .Config.Labels "agentview.config"}}', name]).catch(() => null);
   if (state !== null) {
     const [running, ...label] = state.split(' ');
-    if (label.join(' ') === configLabel(agent)) {
+    if (label.join(' ') === configLabel(agent, image)) {
       if (running !== 'true') await docker(['start', name]);
       return;
     }
@@ -62,11 +64,11 @@ export async function ensureContainer(agent: Agent, dataDir: string): Promise<vo
   }
   const teams = agent.teams ?? [];
   await docker([
-    'run', '-d', '--name', name, '--label', `agentview.config=${configLabel(agent)}`,
+    'run', '-d', '--name', name, '--label', `agentview.config=${configLabel(agent, image)}`,
     ...(agent.sandbox.network ? [] : ['--network', 'none']),
     '--memory', '1g', '--cpus', '1',
     '-v', `${workVolume(agent.id)}:/work`, ...teams.flatMap((t) => ['-v', `${teamVolume(t)}:/team/${t}`]), '-w', '/work',
-    agent.sandbox.image, 'tail', '-f', '/dev/null',
+    image, 'tail', '-f', '/dev/null',
   ]);
   await moveIn(workspaceDir(dataDir, agent.id), name, '/work');
   for (const t of teams) await moveIn(teamspaceDir(dataDir, t), name, `/team/${t}`);
@@ -210,4 +212,89 @@ export async function removeContainer(agentId: string): Promise<void> {
 /** The agent's files are gone for good: only on an explicit request when deleting the agent. */
 export async function removeWorkVolume(agentId: string): Promise<void> {
   await run(['volume', 'rm', '-f', workVolume(agentId)]);
+}
+
+/** Package names that may go into a Dockerfile RUN line: name, optionally a version spec, nothing that a shell would read. */
+export const PKG = {
+  pip: /^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?([=<>!~]=?[A-Za-z0-9.*+-]+)?$/,
+  npm: /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(@[A-Za-z0-9.^~*+-]+)?$/,
+  apt: /^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.:~+-]+)?$/,
+};
+const ENV_REPO = 'agentview/sandbox-env';
+const hasPackages = (p?: Packages) => !!p && (p.pip.length + p.npm.length + p.apt.length) > 0;
+
+/** The image an agent's extra packages make: named by a hash of the base image and the sorted package lists, so equal setups share it. */
+export function envTag(a: Agent): string | null {
+  const p = a.sandbox.packages;
+  if (!hasPackages(p)) return null;
+  const key = JSON.stringify([a.sandbox.image, ...(['apt', 'pip', 'npm'] as const).map((k) => [...p![k]].sort())]);
+  return `${ENV_REPO}:${createHash('sha256').update(key).digest('hex').slice(0, 12)}`;
+}
+
+export function dockerfile(a: Agent): string {
+  const p = a.sandbox.packages!;
+  const bad = (['pip', 'npm', 'apt'] as const).flatMap((k) => p[k].filter((n) => !PKG[k].test(n)));
+  if (bad.length) throw new Error(`invalid package name: ${bad.join(', ')}`); // checked at the API too; this guards the RUN line
+  return [
+    `FROM ${a.sandbox.image}`,
+    p.apt.length && `RUN apt-get update && apt-get install -y --no-install-recommends ${p.apt.join(' ')} && rm -rf /var/lib/apt/lists/*`,
+    p.pip.length && `RUN pip install --no-cache-dir ${p.pip.join(' ')}`,
+    p.npm.length && `RUN npm install -g ${p.npm.join(' ')}`,
+  ].filter(Boolean).join('\n') + '\n';
+}
+
+type Build = { status: 'building' | 'ready' | 'failed'; log: string };
+const builds = new Map<string, Build>();
+const imageExists = async (tag: string) => (await run(['image', 'inspect', tag]).catch(() => null))?.exitCode === 0;
+
+/**
+ * Build the agent's image with its extra packages, once per tag. Building has internet even when the sandbox has none.
+ * The log fills as it goes, so the settings screen can show progress.
+ */
+export async function prepareEnv(a: Agent): Promise<void> {
+  const tag = envTag(a);
+  if (!tag || builds.get(tag)?.status === 'building' || await imageExists(tag)) return;
+  const b: Build = { status: 'building', log: '' };
+  builds.set(tag, b);
+  const add = (s: string) => { b.log = (b.log + s).slice(-20_000); };
+  try {
+    const file = dockerfile(a);
+    const code = await new Promise<number>((resolve, reject) => {
+      const p = spawn('docker', ['build', '--progress=plain', '-t', tag, '-'], { stdio: ['pipe', 'pipe', 'pipe'] });
+      p.stdout!.on('data', (d: Buffer) => add(d.toString()));
+      p.stderr!.on('data', (d: Buffer) => add(d.toString()));
+      p.on('error', reject);
+      p.on('close', (c) => resolve(c ?? 1));
+      p.stdin!.end(file);
+    });
+    b.status = code === 0 ? 'ready' : 'failed';
+  } catch (e) {
+    add(`\n${(e as Error).message}`);
+    b.status = 'failed';
+  }
+}
+
+/** The image the agent runs now: its package image once built, else the base image (and the build starts). */
+async function imageFor(a: Agent): Promise<string> {
+  const tag = envTag(a);
+  if (!tag) return a.sandbox.image;
+  if (await imageExists(tag)) return tag;
+  void prepareEnv(a);
+  return a.sandbox.image;
+}
+
+/** For the settings screen: the image in use and the build of the package image. */
+export async function envState(a: Agent): Promise<{ base: string; tag: string | null; status: 'none' | Build['status']; log: string }> {
+  const tag = envTag(a);
+  if (!tag) return { base: a.sandbox.image, tag, status: 'none', log: '' };
+  const b = builds.get(tag);
+  if (b) return { base: a.sandbox.image, tag, ...b };
+  return { base: a.sandbox.image, tag, status: await imageExists(tag) ? 'ready' : 'building', log: '' };
+}
+
+/** Remove package images no agent asks for any more (an image a container still uses is kept by docker). */
+export async function pruneEnvImages(agents: Agent[]): Promise<void> {
+  const wanted = new Set(agents.map(envTag).filter(Boolean));
+  const out = (await run(['images', ENV_REPO, '--format', '{{.Repository}}:{{.Tag}}']).catch(() => null))?.stdout.toString() ?? '';
+  for (const tag of out.split(/\s+/).filter(Boolean)) if (!wanted.has(tag)) { builds.delete(tag); await run(['rmi', tag]).catch(() => {}); }
 }

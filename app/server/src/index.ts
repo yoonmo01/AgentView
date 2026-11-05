@@ -4,9 +4,9 @@ import type { Db } from './db.ts';
 import { createBus, RUN_ID, summarizeRun, sumUsage, type Ev } from './events.ts';
 import { createMcp, MCP_NAME, parseConfig, type Mcp, type McpConfig } from './mcp.ts';
 import { startRun, type AgUiMessage, type Deps } from './runner.ts';
-import { dockerFiles, NotFound, removeContainer, removeWorkVolume, runInSandbox, type Files } from './sandbox.ts';
+import { dockerFiles, envState, NotFound, PKG, prepareEnv, pruneEnvImages, removeContainer, removeWorkVolume, runInSandbox, type Files } from './sandbox.ts';
 import {
-  AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadConnections,
+  AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadAgent, loadConnections,
   resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
 import { containerPath, listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
@@ -30,7 +30,13 @@ const AGENT_BODY = {
     tools: { type: 'array', maxItems: 100, uniqueItems: true, items: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,64}$' } },
     // the image name goes to `docker run` as an argument, so it must not look like a flag
     sandbox: { type: 'object', additionalProperties: false, required: ['image', 'network'], properties: {
-      image: { type: 'string', pattern: '^[a-z0-9][a-z0-9._/:@-]{0,200}$' }, network: { type: 'boolean' } } },
+      image: { type: 'string', pattern: '^[a-z0-9][a-z0-9._/:@-]{0,200}$' }, network: { type: 'boolean' },
+      // the names go into a Dockerfile RUN line, so only package-name characters pass
+      packages: { type: 'object', additionalProperties: false, properties: {
+        pip: { type: 'array', maxItems: 30, uniqueItems: true, items: { type: 'string', pattern: PKG.pip.source } },
+        npm: { type: 'array', maxItems: 30, uniqueItems: true, items: { type: 'string', pattern: PKG.npm.source } },
+        apt: { type: 'array', maxItems: 30, uniqueItems: true, items: { type: 'string', pattern: PKG.apt.source } },
+      } } } },
     avatar: { type: 'object', additionalProperties: false, required: ['model', 'color'], properties: {
       model: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,60}\\.glb$' }, color: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' } } },
     maxSteps: { type: 'integer', minimum: 1, maximum: 20 },
@@ -68,13 +74,18 @@ function sse(reply: FastifyReply) {
 export function buildApp(opts: {
   dataDir: string; chat: ChatFn; exec?: ExecFn; files?: Files; mcp?: Mcp; db?: Db | null;
   /** removes the agent's container, and its files too when `files` */ removeSandbox?: (agentId: string, files: boolean) => Promise<void>;
+  /** starts building the agent's sandbox image when it has extra packages */ prepareEnv?: (agent: Agent) => Promise<unknown>;
 }) {
   const app = Fastify();
   const bus = createBus(path.join(opts.dataDir, 'runs'));
   const running = new Map<string, AbortController>();
   const exec: ExecFn = opts.exec ?? ((agent, command, timeoutSec, signal) => runInSandbox(agent, opts.dataDir, command, timeoutSec, signal));
   const files = opts.files ?? dockerFiles(opts.dataDir);
-  const removeSandbox = opts.removeSandbox ?? (async (id: string, withFiles: boolean) => { await removeContainer(id); if (withFiles) await removeWorkVolume(id); });
+  const removeSandbox = opts.removeSandbox ?? (async (id: string, withFiles: boolean) => {
+    await removeContainer(id);
+    if (withFiles) await removeWorkVolume(id);
+    await pruneEnvImages(await listAgents(opts.dataDir)); // its package image, unless another agent has the same setup
+  });
   const mcp = opts.mcp ?? createMcp(opts.dataDir);
   void mcp.load(); // servers connect in the background; their status shows on /mcp
   app.addHook('onClose', async () => { await mcp.closeAll(); });
@@ -107,6 +118,8 @@ export function buildApp(opts: {
     });
     if (error) return reply.code(400).send({ error });
     await saveAgent(opts.dataDir, agent);
+    // build the image with its extra packages in the background, then drop package images nobody uses any more
+    void (opts.prepareEnv ?? (async (x: Agent) => { await prepareEnv(x); await pruneEnvImages(await listAgents(opts.dataDir)); }))(agent).catch((e) => app.log.error(e));
     return reply.code(code).send(agent);
   }
 
@@ -130,6 +143,13 @@ export function buildApp(opts: {
     await deleteAgent(opts.dataDir, id);
     await removeSandbox(id, (req.query as { files?: boolean }).files === true).catch(() => {}); // files stay unless asked
     return reply.code(204).send();
+  });
+
+  /** The agent's sandbox environment: which image it runs and how building it with the extra packages went. */
+  app.get('/agents/:id/env', { schema: { params: agentParams } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!agentExists(opts.dataDir, id)) return reply.code(404).send({ error: 'agent not found' });
+    return envState(await loadAgent(opts.dataDir, id));
   });
 
   /** The agent with its teams (they decide the sandbox mounts), or null. */

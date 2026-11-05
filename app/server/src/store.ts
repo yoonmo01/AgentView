@@ -11,13 +11,16 @@ export type Agent = {
   model: string;
   systemPrompt: string;
   tools: string[];
-  sandbox: { image: string; network: boolean };
+  /** packages: extra libraries baked into an image built on top of `image` (see sandbox.ts) */
+  sandbox: { image: string; network: boolean; packages?: Packages };
   avatar: { model: string; color: string };
   maxSteps: number;
   /** Run-time only, never saved: teams the agent belongs to (shared folders are mounted from these). */
   teams?: string[];
 };
 
+/** Extra libraries for an agent's sandbox, by installer. */
+export type Packages = { pip: string[]; npm: string[]; apt: string[] };
 export type Pattern = 'supervisor' | 'parallel' | 'debate' | 'pipeline' | 'review' | 'vote';
 export type Team = {
   id: string;
