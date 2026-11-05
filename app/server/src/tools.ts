@@ -12,6 +12,9 @@ const DEFS: ToolDef[] = [
   { type: 'function', function: { name: 'sandbox_list_files', description: 'List files in your workspace (/work) or a team folder (/team/<teamId>), one path per line.', parameters: obj({ dir: str('Folder. Default "." (= /work).') }) } },
   { type: 'function', function: { name: 'sandbox_read_file', description: 'Read a UTF-8 text file from your workspace or a team folder.', parameters: obj({ path: str(WHERE) }, ['path']) } },
   { type: 'function', function: { name: 'sandbox_write_file', description: 'Create or overwrite a text file in your workspace or a team folder.', parameters: obj({ path: str(WHERE), content: str('Full file content.') }, ['path', 'content']) } },
+  { type: 'function', function: { name: 'sandbox_edit_file', description: 'Change part of a text file: replace the exact text old_text with new_text. old_text must appear exactly once unless replace_all is true. Cheaper than rewriting the whole file.', parameters: obj({ path: str(WHERE), old_text: str('Exact text to find, with enough surrounding lines to be unique.'), new_text: str('Text to put in its place.'), replace_all: { type: 'boolean', description: 'Replace every occurrence. Default false.' } }, ['path', 'old_text', 'new_text']) } },
+  { type: 'function', function: { name: 'sandbox_search', description: 'Find lines matching a regular expression in files under a folder. Returns "path:line:text", at most 200 lines.', parameters: obj({ pattern: str('Regular expression (extended grep syntax).'), dir: str('Folder. Default "." (= /work).') }, ['pattern']) } },
+  { type: 'function', function: { name: 'web_fetch', description: 'Read a web page (http or https) as plain text. Works only when this agent has internet access.', parameters: obj({ url: str('Full address, starting with http:// or https://.') }, ['url']) } },
   { type: 'function', function: { name: 'sandbox_run', description: 'Run a shell command in your sandbox (working directory /work). Returns exit code, stdout and stderr.', parameters: obj({ command: str('Shell command.'), timeoutSec: { type: 'integer', minimum: 1, maximum: 600, description: 'Default 60.' } }, ['command']) } },
 ];
 
@@ -53,6 +56,27 @@ export async function runTool(agent: Agent, name: string, rawArgs: string, signa
         if (typeof args.content !== 'string') throw new Error('content must be a string');
         await env.files.write(agent, containerPath(agent, args.path), args.content);
         return `wrote ${String(args.path)}`;
+      }
+      case 'sandbox_edit_file': {
+        const file = containerPath(agent, args.path);
+        if (typeof args.old_text !== 'string' || !args.old_text) throw new Error('old_text must be a non-empty string');
+        if (typeof args.new_text !== 'string') throw new Error('new_text must be a string');
+        const text = (await env.files.read(agent, file, 1_000_000)).toString('utf8');
+        const count = text.split(args.old_text).length - 1;
+        if (count === 0) throw new Error('old_text not found in the file');
+        if (count > 1 && args.replace_all !== true) throw new Error(`old_text appears ${count} times: add surrounding lines to make it unique, or set replace_all`);
+        await env.files.write(agent, file, text.split(args.old_text).join(args.new_text));
+        const n = args.replace_all === true ? count : 1;
+        return `edited ${String(args.path)} (${n} place${n > 1 ? 's' : ''})`;
+      }
+      case 'sandbox_search': {
+        if (typeof args.pattern !== 'string' || !args.pattern) throw new Error('pattern must be a non-empty string');
+        return clip((await env.files.search(agent, containerPath(agent, String(args.dir ?? '.')), args.pattern)).map(shown).join('\n') || '(no matches)');
+      }
+      case 'web_fetch': {
+        if (!agent.sandbox.network) throw new Error('this agent has no internet access (turn it on in the agent settings)');
+        if (typeof args.url !== 'string' || !/^https?:\/\//.test(args.url)) throw new Error('url must start with http:// or https://');
+        return clip(await env.files.fetchText(agent, args.url) || '(empty page)');
       }
       case 'sandbox_run': {
         if (typeof args.command !== 'string') throw new Error('command must be a string');

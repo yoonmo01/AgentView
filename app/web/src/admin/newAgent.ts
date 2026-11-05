@@ -15,7 +15,7 @@ export function newAgent(name: string, role: string, existing: AgentDef[], model
   const used = new Set(existing.map((a) => a.avatar.color));
   return {
     id: idFor(name, existing.map((a) => a.id)), name, role, connection: models[0]?.id ?? '', model: '', systemPrompt: '',
-    tools: tools.filter((t) => !t.server).map((t) => t.name), maxSteps: 6,
+    tools: tools.filter((t) => !t.server && t.name !== 'web_fetch').map((t) => t.name), maxSteps: 6, // web reading is opt-in, like internet
     sandbox: { image: DEFAULT_IMAGE, network: false },
     avatar: { model: 'default.glb', color: COLORS.find((c) => !used.has(c)) ?? COLORS[existing.length % COLORS.length] },
   };

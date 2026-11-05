@@ -4,6 +4,7 @@ import { Avatar } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
 import { idFor, newAgent } from './newAgent.ts';
 import { parsePackages, SandboxEnv } from './SandboxEnv.tsx';
+import { TOOL_HELP, TOOL_KO } from './toolNames.ts';
 
 /** Soft character colors; none is neon, and the last swatch opens a free color picker. */
 const AVATAR_COLORS = ['#e8805a', '#f2a65a', '#e9c46a', '#8cc084', '#4fb3a9', '#5b9bd5', '#6c7fd8', '#a084dc', '#e07ba0', '#c97b63', '#7d8597', '#3d5a80'];
@@ -109,10 +110,10 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
               <fieldset key={server ?? 'base'}>
                 <legend>{server ? `외부 도구 (MCP) · ${server}` : '기본 도구 (샌드박스)'}</legend>
                 {tools.filter((t) => t.server === server).map((t) => (
-                  <label key={t.name} className="check" title={t.description}>
+                  <label key={t.name} className="check" title={server ? t.description : TOOL_HELP[t.name] ?? t.description}>
                     <input type="checkbox" checked={form.tools.includes(t.name)}
                       onChange={(e) => set({ tools: e.target.checked ? [...form.tools, t.name] : form.tools.filter((x) => x !== t.name) })} />
-                    {server ? t.name.slice(`mcp__${server}__`.length) : t.name}
+                    {server ? t.name.slice(`mcp__${server}__`.length) : TOOL_KO[t.name] ?? t.name}
                   </label>
                 ))}
               </fieldset>
