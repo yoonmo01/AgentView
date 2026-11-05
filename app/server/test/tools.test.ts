@@ -17,6 +17,30 @@ describe('tools', () => {
     expect(toolDefs(agent).map((d) => d.function.name)).toEqual(['sandbox_read_file', 'sandbox_write_file', 'sandbox_run']);
   });
 
+  it('edits part of a file, refusing missing or ambiguous text', async () => {
+    const e = env();
+    const coder = { ...agent, tools: ['sandbox_write_file', 'sandbox_read_file', 'sandbox_edit_file'] };
+    await runTool(coder, 'sandbox_write_file', JSON.stringify({ path: 'a.py', content: 'x = 1\ny = 1\n' }), sig(), e);
+    const edit = (args: object) => runTool(coder, 'sandbox_edit_file', JSON.stringify({ path: 'a.py', ...args }), sig(), e);
+    expect(await edit({ old_text: 'x = 1', new_text: 'x = 2' })).toBe('edited a.py (1 place)');
+    expect(await edit({ old_text: 'zzz', new_text: '' })).toBe('ERROR: old_text not found in the file');
+    expect(await edit({ old_text: ' = ', new_text: '=' })).toMatch(/appears 2 times/);
+    expect(await edit({ old_text: ' = ', new_text: '=', replace_all: true })).toBe('edited a.py (2 places)');
+    expect(await runTool(coder, 'sandbox_read_file', '{"path":"a.py"}', sig(), e)).toBe('x=2\ny=1\n');
+  });
+
+  it('searches files and reads web pages only with internet', async () => {
+    const e = env();
+    const a = { ...agent, tools: ['sandbox_write_file', 'sandbox_search', 'web_fetch'] };
+    await runTool(a, 'sandbox_write_file', JSON.stringify({ path: 'src/m.py', content: 'def add():\n  pass\n' }), sig(), e);
+    expect(await runTool(a, 'sandbox_search', '{"pattern":"def \\\\w+"}', sig(), e)).toBe('src/m.py:1:def add():');
+    expect(await runTool(a, 'sandbox_search', '{"pattern":"nothing"}', sig(), e)).toBe('(no matches)');
+    expect(await runTool(a, 'web_fetch', '{"url":"https://example.com"}', sig(), e)).toMatch(/no internet access/);
+    const online = { ...a, sandbox: { ...a.sandbox, network: true } };
+    expect(await runTool(online, 'web_fetch', '{"url":"https://example.com"}', sig(), e)).toBe('page at https://example.com');
+    expect(await runTool(online, 'web_fetch', '{"url":"file:///etc/passwd"}', sig(), e)).toMatch(/must start with http/);
+  });
+
   it('writes then reads a file in the workspace', async () => {
     const e = env();
     expect(await runTool(agent, 'sandbox_write_file', JSON.stringify({ path: 'a.txt', content: 'x' }), sig(), e)).toBe('wrote a.txt');

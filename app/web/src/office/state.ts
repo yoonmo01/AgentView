@@ -37,6 +37,9 @@ export function describeTool(name: string, rawArgs: string, done = false): strin
     case 'sandbox_write_file': return done ? `${file} 작성` : `${file} 쓰는 중`;
     case 'sandbox_read_file': return done ? `${file} 읽음` : `${file} 읽는 중`;
     case 'sandbox_list_files': return done ? '파일 목록 확인' : '파일 둘러보는 중';
+    case 'sandbox_edit_file': return done ? `${file} 고침` : `${file} 고치는 중`;
+    case 'sandbox_search': return a.pattern ? `찾기: ${String(a.pattern).slice(0, 40)}` : done ? '파일에서 찾음' : '파일에서 찾는 중';
+    case 'web_fetch': return a.url ? `웹 읽기: ${String(a.url).replace(/^https?:\/\//, '').slice(0, 40)}` : done ? '웹 페이지 읽음' : '웹 페이지 읽는 중';
     case 'sandbox_run': return a.command ? `실행: ${String(a.command).slice(0, 50)}` : done ? '명령 실행' : '명령 실행 중';
     case 'delegate': return a.member ? (done ? `${String(a.member)}에게 맡김` : `${String(a.member)}에게 맡기는 중`) : '일 나누는 중';
     default: {
@@ -46,7 +49,7 @@ export function describeTool(name: string, rawArgs: string, done = false): strin
   }
 }
 
-const WRITE_TOOLS = new Set(['sandbox_write_file', 'sandbox_run']);
+const WRITE_TOOLS = new Set(['sandbox_write_file', 'sandbox_edit_file', 'sandbox_run']);
 const SETTLE_MS = 5_000;
 
 /** Status to draw now: done/error fall back to idle after a few seconds. */

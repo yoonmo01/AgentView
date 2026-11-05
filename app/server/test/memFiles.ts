@@ -16,5 +16,15 @@ export function memFiles(): Files & { put: (agentId: string, file: string, conte
     },
     write: async (a, file, content) => { store.set(key(a.id, file), content); },
     zip: async () => Buffer.from('PK'),
+    search: async (a, dir, pattern) => {
+      const re = new RegExp(pattern);
+      const out: string[] = [];
+      for (const [k, v] of store) {
+        const p = k.startsWith('/team/') ? k : k.startsWith(`${a.id}:`) ? k.slice(a.id.length + 1) : null;
+        if (p?.startsWith(`${dir}/`)) v.split('\n').forEach((line, i) => { if (re.test(line)) out.push(`${p}:${i + 1}:${line}`); });
+      }
+      return out;
+    },
+    fetchText: async (_a, url) => `page at ${url}`,
   };
 }

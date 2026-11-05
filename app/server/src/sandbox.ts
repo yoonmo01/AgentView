@@ -166,9 +166,26 @@ export type Files = {
   read: (agent: Agent, file: string, maxBytes?: number) => Promise<Buffer>;
   write: (agent: Agent, file: string, content: string) => Promise<void>;
   zip: (agent: Agent, dir: string) => Promise<Buffer>;
+  /** lines matching a regular expression under dir, as "path:line:text", at most 200 */
+  search: (agent: Agent, dir: string, pattern: string) => Promise<string[]>;
+  /** a web page as plain text, fetched from inside the sandbox (so only agents with internet can reach the web) */
+  fetchText: (agent: Agent, url: string) => Promise<string>;
 };
 
 const MISSING_DIR = '[ -d "$1" ] || { echo "no such folder: $1" >&2; exit 2; }';
+/** Fetch one http(s) page (1MB at most, 20s) and reduce HTML to readable text. */
+const FETCH_PY = String.raw`import html, re, sys, urllib.request
+url = sys.argv[1]
+if not re.match(r'^https?://', url): sys.exit('only http and https addresses')
+req = urllib.request.Request(url, headers={'User-Agent': 'AgentView-sandbox'})
+with urllib.request.urlopen(req, timeout=20) as r:
+    body = r.read(1_000_000).decode(r.headers.get_content_charset() or 'utf-8', 'replace')
+    kind = r.headers.get_content_type()
+if 'html' in kind:
+    body = re.sub(r'(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>', ' ', body)
+    body = re.sub(r'(?i)<br\s*/?>|</(p|div|li|h[1-6]|tr)>', '\n', body)
+    body = html.unescape(re.sub(r'<[^>]+>', ' ', body))
+print(re.sub(r'[ \t]+', ' ', re.sub(r'\n\s*\n+', '\n\n', body)).strip())`;
 const ZIP_PY = `import os, sys, zipfile
 root = sys.argv[1]
 with zipfile.ZipFile(sys.stdout.buffer, 'w', zipfile.ZIP_DEFLATED) as z:
@@ -193,6 +210,12 @@ export function dockerFiles(dataDir: string): Files {
       '[ -f "$1" ] || { echo "no such file: $1" >&2; exit 2; }; [ "$2" = - ] || [ $(wc -c < "$1") -le "$2" ] || { echo "file larger than $2 bytes: $1" >&2; exit 3; }; cat "$1"',
       [file, maxBytes === undefined ? '-' : String(maxBytes)]),
     write: async (agent, file, content) => { await sh(agent, 'mkdir -p "$(dirname "$1")" && cat > "$1"', [file], content); },
+    search: async (agent, dir, pattern) => (await sh(agent,
+      // grep exits 1 when nothing matches: that is an empty result, not an error
+      `${MISSING_DIR}; grep -rnIE --exclude-dir=node_modules --exclude-dir=.git -e "$2" "$1" | head -200; exit 0`, [dir, pattern]))
+      .toString().split('\n').filter(Boolean),
+    fetchText: async (agent, url) => (await sh(agent,
+      'command -v python3 >/dev/null || { echo "the sandbox image has no python3 to fetch pages" >&2; exit 3; }; python3 -c "$2" "$1"', [url, FETCH_PY])).toString(),
     zip: (agent, dir) => sh(agent, `${MISSING_DIR}; command -v python3 >/dev/null || { echo "the sandbox image has no python3 to make a zip" >&2; exit 3; }; python3 -c "$2" "$1"`, [dir, ZIP_PY]),
   };
 }
