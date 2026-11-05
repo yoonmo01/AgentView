@@ -59,7 +59,7 @@ export function displayStatus(v: AgentView | undefined, now: number): Status {
 function nextStatus(e: AgUiEvent): Pick<AgentView, 'status' | 'tool'> | null {
   switch (e.type) {
     case 'CUSTOM':
-      return e.name === 'agentview.run_info' ? { status: 'thinking' } : e.name === 'agentview.queued' ? { status: 'queued' } : null;
+      return e.name === 'agentview.run_info' ? { status: 'thinking' } : e.name === 'agentview.queued' ? { status: 'queued' } : e.name === 'agentview.resumed' ? { status: 'reading' } : null;
     case 'SUBAGENT_STARTED':
     case 'TEXT_MESSAGE_START':
     case 'TOOL_CALL_RESULT':
@@ -110,7 +110,7 @@ export function apply(s: OfficeState, runId: string, seq: number, e: AgUiEvent, 
   }
 
   const agentId: string | undefined =
-    e.type === 'CUSTOM' && e.name === 'agentview.queued' ? e.value.agentId
+    e.type === 'CUSTOM' && (e.name === 'agentview.queued' || e.name === 'agentview.resumed') ? e.value.agentId
     : e.subagentRunId ? runs[runId]?.subs[e.subagentRunId]
     : runs[runId]?.main;
   if (!agentId) return { ...s, runs, links, seen };
@@ -127,7 +127,7 @@ export function apply(s: OfficeState, runId: string, seq: number, e: AgUiEvent, 
   if (!next) return { ...s, runs, links, seen };
   const say = e.type === 'TOOL_CALL_START' ? describeTool(e.toolCallName, '')
     : e.type === 'TEXT_MESSAGE_START' ? ''
-    : e.type === 'CUSTOM' && e.name === 'agentview.queued' ? '다른 일이 끝나길 기다리는 중'
+    : e.type === 'CUSTOM' && e.name === 'agentview.queued' ? (e.value.reason === 'sandbox' ? '샌드박스 자리가 나길 기다리는 중' : '다른 일이 끝나길 기다리는 중')
     : cur?.runId === runId ? cur.say : undefined;
   return { agents: { ...s.agents, [agentId]: { ...next, runId, since: now, say } }, runs, links, seen };
 }

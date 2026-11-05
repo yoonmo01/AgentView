@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { rename } from 'node:fs/promises';
@@ -74,15 +75,66 @@ export async function ensureContainer(agent: Agent, dataDir: string): Promise<vo
 const idleTimers = new Map<string, NodeJS.Timeout>();
 const IDLE_MS = 30 * 60_000;
 
-/** Every use of the sandbox: start it if needed, keep it from an idle stop meanwhile, and stop it after 30 idle minutes. */
-async function inBox<T>(agent: Agent, dataDir: string, fn: (name: string) => Promise<T>): Promise<T> {
+/** Who to tell when a job waits for a sandbox slot (true) and gets one (false); the runner sets it per agent job. */
+export const slotWatch = new AsyncLocalStorage<(waiting: boolean) => void>();
+// ponytail: counts the agent sandboxes this server started; MCP server containers are not counted
+const MAX_RUNNING = Math.max(1, Number(process.env.AGENTVIEW_MAX_SANDBOXES) || 4);
+const live = new Map<string, number>(); // agent → last use, for the sandboxes running now
+const busy = new Map<string, number>(); // agent → sandbox uses in progress
+let waiters: (() => void)[] = [];
+
+/** Stop a sandbox now. It is out of the running set at once; docker gets 1s since its files are safe in the volume. */
+function stopSandbox(agentId: string): Promise<unknown> {
+  live.delete(agentId);
+  clearTimeout(idleTimers.get(agentId));
+  return run(['stop', '-t', '1', containerName(agentId)]);
+}
+
+/**
+ * At most MAX_RUNNING sandboxes run at once. A new one stops the longest-idle running sandbox to make room;
+ * when every running sandbox is busy, the job waits in line until one is free.
+ */
+async function takeSlot(agentId: string, signal?: AbortSignal): Promise<void> {
+  let told = false;
+  let evicted: Promise<unknown> | undefined;
+  for (;;) {
+    signal?.throwIfAborted();
+    if (live.has(agentId) || live.size < MAX_RUNNING) break;
+    const idle = [...live].filter(([id]) => !busy.get(id)).sort((a, b) => a[1] - b[1])[0]?.[0];
+    if (idle) { evicted = stopSandbox(idle); break; } // the freed place is taken below, before any await
+    if (!told) { told = true; slotWatch.getStore()?.(true); }
+    await new Promise<void>((resolve, reject) => {
+      const leave = () => { waiters = waiters.filter((w) => w !== go); reject(signal!.reason); };
+      const go = () => { signal?.removeEventListener('abort', leave); resolve(); };
+      signal?.addEventListener('abort', leave, { once: true });
+      waiters.push(go);
+    });
+  }
+  live.set(agentId, Date.now());
+  busy.set(agentId, (busy.get(agentId) ?? 0) + 1);
+  if (told) slotWatch.getStore()?.(false);
+  await evicted;
+}
+
+function freeSlot(agentId: string): void {
+  const n = (busy.get(agentId) ?? 1) - 1;
+  busy.set(agentId, n);
+  if (live.has(agentId)) live.set(agentId, Date.now());
+  if (n === 0) idleTimers.set(agentId, setTimeout(() => { void stopSandbox(agentId); }, IDLE_MS).unref());
+  const woken = waiters;
+  waiters = [];
+  woken.forEach((w) => w());
+}
+
+/** Every use of the sandbox: wait for a slot, start it if needed, and stop it after 30 idle minutes. */
+async function inBox<T>(agent: Agent, dataDir: string, fn: (name: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
   clearTimeout(idleTimers.get(agent.id)); // an idle stop from the last job must not hit this one
-  const name = containerName(agent.id);
+  await takeSlot(agent.id, signal);
   try {
     await ensureContainer(agent, dataDir);
-    return await fn(name);
+    return await fn(containerName(agent.id));
   } finally {
-    idleTimers.set(agent.id, setTimeout(() => { void run(['stop', name]); }, IDLE_MS).unref());
+    freeSlot(agent.id);
   }
 }
 
@@ -100,7 +152,7 @@ export function runInSandbox(agent: Agent, dataDir: string, command: string, tim
     } finally {
       signal.removeEventListener('abort', onAbort);
     }
-  });
+  }, signal);
 }
 
 export class NotFound extends Error {}
@@ -151,6 +203,7 @@ export async function stopLeftoverSandboxes(): Promise<void> {
 
 export async function removeContainer(agentId: string): Promise<void> {
   clearTimeout(idleTimers.get(agentId));
+  live.delete(agentId);
   await run(['rm', '-f', containerName(agentId)]);
 }
 

@@ -78,4 +78,11 @@ describe('office state', () => {
   it('shows agents waiting for another run as queued', () => {
     expect(feed([{ type: 'CUSTOM', name: 'agentview.queued', value: { agentId: 'nova' } }]).agents.nova.status).toBe('queued');
   });
+
+  it('shows a wait for a sandbox slot, then work again', () => {
+    const waiting = feed([{ type: 'CUSTOM', name: 'agentview.queued', value: { agentId: 'nova', reason: 'sandbox' } }]);
+    expect(waiting.agents.nova).toMatchObject({ status: 'queued', say: '샌드박스 자리가 나길 기다리는 중' });
+    expect(feed([{ type: 'CUSTOM', name: 'agentview.queued', value: { agentId: 'nova', reason: 'sandbox' } },
+      { type: 'CUSTOM', name: 'agentview.resumed', value: { agentId: 'nova' } }]).agents.nova.status).toBe('reading');
+  });
 });
