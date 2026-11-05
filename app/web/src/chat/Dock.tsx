@@ -22,6 +22,16 @@ const toLines = (ms: SessionMessage[]): Line[] => {
 };
 const n = (x: number) => x.toLocaleString('ko-KR');
 
+/** Outline icons for the chat rail (24px grid, drawn with the text color). */
+const ICON = {
+  chat: 'M4 5h16v11H9l-5 4z',
+  history: 'M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4',
+  folder: 'M3 6h6l2 2h10v11H3z',
+};
+const Icon = ({ d }: { d: string }) => (
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>
+);
+
 /** "입력 1,234 · 출력 56 토큰", with a per-agent breakdown when more than one agent used the model. */
 function Tokens({ usage, names }: { usage: Usage; names: (id: string) => string }) {
   const by = Object.entries(usage.by);
@@ -71,7 +81,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
   const [live, setLive] = useState<{ runId: string; events: AgUiEvent[] } | null>(null);
   const [text, setText] = useState('');
   const [model, setModel] = useState('');
-  const [view, setView] = useState<'chat' | 'files'>('chat');
+  const [view, setView] = useState<'chat' | 'history' | 'files'>('chat');
   const [dbOff, setDbOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -212,44 +222,47 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
 
   let lastGroup = '';
   return (
-    <section key="big" className="dock open" aria-label={`${name} 채팅`}>
-      <aside className="sessions">
-        <button className="add" onClick={() => { setSessionId(null); setLines([]); setView('chat'); }} disabled={!target || !!live}>+ 새 대화</button>
-        {dbOff && <p className="muted small">DB가 꺼져 있어 대화가 저장되지 않아요 (npm run db).</p>}
-        <ul>
-          {sessions.map((s) => {
-            const g = dayGroup(s.updatedAt);
-            const head = g !== lastGroup ? (lastGroup = g) : null;
-            return (
-              <li key={s.id}>
-                {head && <div className="group">{head}</div>}
-                <div className={`session${s.id === sessionId ? ' active' : ''}`}>
-                  <button onClick={() => { justStarted.current = null; setSessionId(s.id); setView('chat'); }} disabled={!!live} title={s.title}>
-                    <span>{s.title}</span><small>{shortTime(s.updatedAt)}</small>
-                  </button>
-                  <button className="icon" onClick={() => void removeSession(s)} aria-label={`${s.title} 지우기`} disabled={!!live}>✕</button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+    <section key="big" className={`dock open${view === 'files' ? ' wide' : ''}`} aria-label={`${name} 채팅`}>
+      {/* one thing at a time in the whole panel: the conversation, its history, or the work folder */}
+      <nav className="rail" aria-label="채팅 보기">
+        <button aria-pressed={view === 'chat'} onClick={() => setView('chat')} title="대화" aria-label="대화"><Icon d={ICON.chat} /></button>
+        <button aria-pressed={view === 'history'} onClick={() => setView('history')} disabled={!target} title="대화 기록" aria-label="대화 기록"><Icon d={ICON.history} /></button>
+        <button aria-pressed={view === 'files'} onClick={() => setView('files')} disabled={!target} title={team ? '팀 폴더' : '작업 폴더'} aria-label={team ? '팀 폴더' : '작업 폴더'}><Icon d={ICON.folder} /></button>
+      </nav>
       <div className="conversation">
         <header>
           {team ? <TeamMark team={team} /> : agent && <Avatar agent={agent} />}
-          <div className="who"><b>{name}</b><small>{team ? `${PATTERN_LABEL[team.pattern]} 팀` : agent?.role}</small></div>
+          <div className="who"><b>{name}</b><small>{view === 'history' ? '대화 기록' : view === 'files' ? (team ? '팀 폴더' : '작업 폴더') : team ? `${PATTERN_LABEL[team.pattern]} 팀` : agent?.role}</small></div>
+          {team && <TeamMembers team={team} agents={agents} teams={teams} state={state} now={Date.now()} stack />}
           {agent && !team && <Chip status={status} />}
-          {(team || agent) && (
-            <div className="tabs">
-              <button aria-selected={view === 'chat'} onClick={() => setView('chat')}>대화</button>
-              <button aria-selected={view === 'files'} onClick={() => setView('files')}>{team ? '팀 폴더' : '작업 폴더'}</button>
-            </div>
-          )}
           {target && <button className="icon" onClick={() => onSettings(target)} title="설정" aria-label="설정">⚙</button>}
           <button className="icon" onClick={() => onExpand(false)} aria-label="채팅 접기">▾</button>
         </header>
-        {team && <div className="team-strip"><TeamMembers team={team} agents={agents} teams={teams} state={state} now={Date.now()} /></div>}
-        {view === 'files' && (team || agent) ? <Files key={target} base={team ? `/teams/${team.id}` : `/agents/${agent!.id}`} team={!!team} refresh={lines.length} /> : (
+        {view === 'history' ? (
+          <div className="history">
+            <button className="add" onClick={() => { setSessionId(null); setLines([]); setView('chat'); }} disabled={!target || !!live}>+ 새 대화</button>
+            {dbOff && <p className="muted small">DB가 꺼져 있어 대화가 저장되지 않아요 (npm run db).</p>}
+            {!dbOff && !sessions.length && <p className="empty-note">아직 대화가 없어요.</p>}
+            <ul>
+              {sessions.map((s) => {
+                const g = dayGroup(s.updatedAt);
+                const head = g !== lastGroup ? (lastGroup = g) : null;
+                return (
+                  <li key={s.id}>
+                    {head && <div className="group">{head}</div>}
+                    <div className={`session${s.id === sessionId ? ' active' : ''}`}>
+                      <button onClick={() => { justStarted.current = null; setSessionId(s.id); setView('chat'); }} disabled={!!live} title={s.title}>
+                        <span>{s.title}</span><small>{shortTime(s.updatedAt)}</small>
+                      </button>
+                      <button className="icon" onClick={() => void removeSession(s)} aria-label={`${s.title} 지우기`} disabled={!!live}>✕</button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+        {view === 'history' ? null : view === 'files' && (team || agent) ? <Files key={target} base={team ? `/teams/${team.id}` : `/agents/${agent!.id}`} team={!!team} refresh={lines.length} /> : (
           <div className="log" ref={log} aria-live="polite">
             {!target && <p className="empty-note">오피스에서 캐릭터나 팀 방을 눌러 대화 상대를 고르세요.</p>}
             {target && !lines.length && !live && <p className="empty-note">{sessionId ? '불러오는 중…' : `${name}에게 첫 메시지를 보내 보세요.`}</p>}
@@ -273,7 +286,7 @@ export function Dock({ target, agents, teams, state, expanded, beside, onExpand,
             {error && <p className="error">{error}</p>}
           </div>
         )}
-        {composer}
+        {view === 'chat' && composer}
       </div>
     </section>
   );
