@@ -133,7 +133,7 @@ li.fold { list-style: none; }
 .activity > summary { cursor: pointer; }
 .activity ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
 .activity li summary { cursor: pointer; color: #555; }
-.activity pre, .files-view pre { white-space: pre-wrap; word-break: break-all; background: #1f1d1a; color: #eee; padding: 6px 8px; border-radius: 6px; max-height: 200px; overflow: auto; font-size: 11px; margin: 4px 0; }
+.activity pre { white-space: pre-wrap; word-break: break-all; background: #1f1d1a; color: #eee; padding: 6px 8px; border-radius: 6px; max-height: 200px; overflow: auto; font-size: 11px; margin: 4px 0; }
 .composer { display: grid; gap: 6px; padding: 8px 10px; }
 .dock.open .composer { border-top: 1px solid var(--line); }
 .composer textarea { width: 100%; resize: none; padding: 8px 10px; border: 1px solid #d6cfc2; border-radius: 10px; background: #fff; }
@@ -148,9 +148,6 @@ li.fold { list-style: none; }
 .files details[open] > summary::before { transform: rotate(90deg); }
 .files-side { display: grid; gap: 8px; align-content: start; }
 .files-open { display: grid; gap: 6px; align-content: start; min-width: 0; }
-.files-head { display: flex; align-items: center; gap: 8px; }
-.files-head code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.files-view .files-open pre { max-height: none; margin: 0; }
 a.button { display: inline-block; text-align: center; text-decoration: none; color: inherit; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 4px 10px; font-size: 12px; }
 a.button:hover { border-color: var(--accent); }
 
@@ -346,3 +343,15 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 .code-block pre code { font-family: ui-monospace, Consolas, monospace; white-space: pre; }
 .dock-last .md.clamp { font-size: 13.5px; line-height: 1.5; max-height: 4.6em; overflow: hidden; }
 .dock-last .md.clamp .code-block, .dock-last .md.clamp table { display: none; }
+
+/* work folder: a file as highlighted code with line numbers */
+.code-view { border-radius: 8px; overflow: hidden; background: #0d1117; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
+.code-view .code-head { gap: 8px; }
+.code-view .code-head .name { flex: 1; color: #c9d1d9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-view a.copy { border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; padding: 1px 8px; font-size: 11px; text-decoration: none; }
+.code-view a.copy:hover { border-color: #8b949e; }
+.code-body { display: flex; overflow: auto; }
+.code-body pre { margin: 0; padding: 10px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.55; white-space: pre; color: #c9d1d9; }
+.code-body pre code.hljs { padding: 0; background: transparent; }
+.code-body .gutter { flex: none; text-align: right; color: #484f58; padding-right: 10px; border-right: 1px solid #21262d; user-select: none; }
+.code-view .md.doc { background: #fff; color: var(--text); padding: 12px 14px; font-size: 13px; line-height: 1.6; }
