@@ -2,14 +2,11 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AgentDef, type ModelConn, type ToolInfo } from '../api.ts';
 import { Avatar } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
+import { idFor, newAgent } from './newAgent.ts';
 
 /** Soft character colors; none is neon, and the last swatch opens a free color picker. */
 const AVATAR_COLORS = ['#e8805a', '#f2a65a', '#e9c46a', '#8cc084', '#4fb3a9', '#5b9bd5', '#6c7fd8', '#a084dc', '#e07ba0', '#c97b63', '#7d8597', '#3d5a80'];
 
-const EMPTY: AgentDef = {
-  id: '', name: '', role: '', connection: '', model: '', systemPrompt: '', tools: [], maxSteps: 6,
-  sandbox: { image: 'agentview/sandbox:base', network: false }, avatar: { model: 'default.glb', color: '#5b9bd5' },
-};
 
 /** Agent list and form. `focus` opens that agent; `onChanged` lets the office reload after a save or delete. */
 export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () => void } = {}) {
@@ -29,13 +26,14 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   }, []);
 
   const set = (patch: Partial<AgentDef>) => setForm((f) => f && { ...f, ...patch });
-  const open = (a: AgentDef | null) => { setForm(a ?? { ...EMPTY, connection: models[0]?.id ?? '' }); setIsNew(!a); setMsg(null); };
+  const open = (a: AgentDef | null) => { setForm(a ?? { ...newAgent('', '', agents, models, tools), id: '' }); setIsNew(!a); setMsg(null); };
 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!form) return;
     try {
-      const saved = await api<AgentDef>(isNew ? '/agents' : `/agents/${form.id}`, { method: isNew ? 'POST' : 'PUT', body: form });
+      const body = isNew && !form.id ? { ...form, id: idFor(form.name, agents.map((a) => a.id)) } : form;
+      const saved = await api<AgentDef>(isNew ? '/agents' : `/agents/${form.id}`, { method: isNew ? 'POST' : 'PUT', body });
       setForm(saved);
       setIsNew(false);
       setMsg({ text: '저장했어요.' });
@@ -76,13 +74,15 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
         {!form ? <p>왼쪽에서 에이전트를 고르거나 새로 만드세요.</p> : (
           <form onSubmit={save} className="form">
             <h2>{isNew ? '새 에이전트' : form.name}</h2>
-            <label>ID (영문 소문자·숫자·-)
-              <input required pattern="[a-z0-9][a-z0-9\-]{0,40}" value={form.id} disabled={!isNew} onChange={(e) => set({ id: e.target.value })} />
+            <div className="row">
+              <label>이름<input required maxLength={60} value={form.name} onChange={(e) => set({ name: e.target.value })} /></label>
+              <label>역할<input maxLength={200} value={form.role} placeholder="예: 코딩 담당" onChange={(e) => set({ role: e.target.value })} /></label>
+            </div>
+            <label>ID (영문 소문자·숫자·-){isNew && ' · 비우면 이름으로 자동'}
+              <input pattern="[a-z0-9][a-z0-9\-]{0,40}" value={form.id} disabled={!isNew} placeholder={isNew ? idFor(form.name, agents.map((a) => a.id)) : undefined} onChange={(e) => set({ id: e.target.value })} />
             </label>
-            <label>이름<input required maxLength={60} value={form.name} onChange={(e) => set({ name: e.target.value })} /></label>
-            <label>역할<input maxLength={200} value={form.role} onChange={(e) => set({ role: e.target.value })} /></label>
-            <label>지시문 (system prompt)
-              <textarea rows={6} value={form.systemPrompt} onChange={(e) => set({ systemPrompt: e.target.value })} />
+            <label>기본 지시문 (항상 적용)
+              <textarea rows={6} value={form.systemPrompt} placeholder="혼자 일할 때도, 어느 팀에 있을 때도 맨 앞에 들어가는 성격과 규칙" onChange={(e) => set({ systemPrompt: e.target.value })} />
             </label>
             <div className="row">
               <label>모델 연결
@@ -98,7 +98,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
             </div>
             {[...new Set(tools.map((t) => t.server))].map((server) => (
               <fieldset key={server ?? 'base'}>
-                <legend>{server ? `MCP 도구 · ${server}` : '기본 도구 (샌드박스)'}</legend>
+                <legend>{server ? `외부 도구 (MCP) · ${server}` : '기본 도구 (샌드박스)'}</legend>
                 {tools.filter((t) => t.server === server).map((t) => (
                   <label key={t.name} className="check" title={t.description}>
                     <input type="checkbox" checked={form.tools.includes(t.name)}
