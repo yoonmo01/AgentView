@@ -7,7 +7,7 @@ export type AgentDef = {
   model: string;
   systemPrompt: string;
   tools: string[];
-  sandbox: { image: string; network: boolean };
+  sandbox: { image: string; network: boolean; packages?: { pip: string[]; npm: string[]; apt: string[] } };
   avatar: { model: string; color: string };
   maxSteps: number;
 };

@@ -3,6 +3,7 @@ import { api, type AgentDef, type ModelConn, type ToolInfo } from '../api.ts';
 import { Avatar } from '../shell/ui.tsx';
 import { ask } from '../shell/ask.ts';
 import { idFor, newAgent } from './newAgent.ts';
+import { parsePackages, SandboxEnv } from './SandboxEnv.tsx';
 
 /** Soft character colors; none is neon, and the last swatch opens a free color picker. */
 const AVATAR_COLORS = ['#e8805a', '#f2a65a', '#e9c46a', '#8cc084', '#4fb3a9', '#5b9bd5', '#6c7fd8', '#a084dc', '#e07ba0', '#c97b63', '#7d8597', '#3d5a80'];
@@ -16,6 +17,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   const [form, setForm] = useState<AgentDef | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
+  const [pkgs, setPkgs] = useState({ pip: '', npm: '', apt: '' }); // package fields as typed
 
   const fail = (e: unknown) => setMsg({ text: (e as Error).message, error: true });
   const reload = () => api<AgentDef[]>('/agents').then((list) => { setAgents(list); return list; });
@@ -26,13 +28,20 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
   }, []);
 
   const set = (patch: Partial<AgentDef>) => setForm((f) => f && { ...f, ...patch });
-  const open = (a: AgentDef | null) => { setForm(a ?? { ...newAgent('', '', agents, models, tools), id: '' }); setIsNew(!a); setMsg(null); };
+  const open = (a: AgentDef | null) => {
+    setForm(a ?? { ...newAgent('', '', agents, models, tools), id: '' });
+    const p = a?.sandbox.packages;
+    setPkgs({ pip: p?.pip.join(' ') ?? '', npm: p?.npm.join(' ') ?? '', apt: p?.apt.join(' ') ?? '' });
+    setIsNew(!a);
+    setMsg(null);
+  };
 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!form) return;
     try {
-      const body = isNew && !form.id ? { ...form, id: idFor(form.name, agents.map((a) => a.id)) } : form;
+      const packages = { pip: parsePackages(pkgs.pip), npm: parsePackages(pkgs.npm), apt: parsePackages(pkgs.apt) };
+      const body = { ...form, id: isNew && !form.id ? idFor(form.name, agents.map((a) => a.id)) : form.id, sandbox: { ...form.sandbox, packages } };
       const saved = await api<AgentDef>(isNew ? '/agents' : `/agents/${form.id}`, { method: isNew ? 'POST' : 'PUT', body });
       setForm(saved);
       setIsNew(false);
@@ -108,13 +117,7 @@ export function Agents({ focus, onChanged }: { focus?: string; onChanged?: () =>
                 ))}
               </fieldset>
             ))}
-            <label>샌드박스 이미지
-              <input value={form.sandbox.image} onChange={(e) => set({ sandbox: { ...form.sandbox, image: e.target.value } })} />
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={form.sandbox.network} onChange={(e) => set({ sandbox: { ...form.sandbox, network: e.target.checked } })} />
-              샌드박스 인터넷 허용
-            </label>
+            <SandboxEnv form={form} texts={pkgs} onTexts={setPkgs} onSandbox={(sandbox) => set({ sandbox })} saved={isNew ? undefined : form.id} />
             <fieldset className="swatches">
               <legend>캐릭터 색</legend>
               {AVATAR_COLORS.map((c) => (
