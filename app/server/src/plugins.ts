@@ -33,24 +33,66 @@ const save = async (dataDir: string, s: State) => {
 async function readMarketplace(repoText: string, fetchFn: typeof fetch): Promise<Marketplace> {
   const g = parseRepo(repoText);
   if (!g) throw new Error('GitHub 저장소 주소가 아니에요 (예: anthropics/claude-plugins-official)');
-  const r: Repo = { owner: g.owner, repo: g.repo, ref: g.ref ?? await defaultBranch(g.owner, g.repo, fetchFn) };
+  const m = await marketplaceAt({ owner: g.owner, repo: g.repo, ref: g.ref ?? await defaultBranch(g.owner, g.repo, fetchFn) }, fetchFn);
+  if (!m) throw new Error('이 저장소에 .claude-plugin/marketplace.json이 없어요');
+  return m;
+}
+
+/** The repo's plugin list, or null when it has no .claude-plugin/marketplace.json. */
+async function marketplaceAt(r: Repo, fetchFn: typeof fetch): Promise<Marketplace | null> {
   let json: { name?: string; plugins?: MarketPlugin[] };
   try {
     json = JSON.parse(await rawText(r, '.claude-plugin/marketplace.json', fetchFn));
   } catch {
-    throw new Error('이 저장소에 .claude-plugin/marketplace.json이 없어요');
+    return null;
   }
   const plugins = (json.plugins ?? []).filter((p) => p && typeof p.name === 'string')
     .map((p) => ({ name: p.name, description: String(p.description ?? ''), version: p.version, source: p.source }));
   return { name: String(json.name ?? r.repo), repo: `${r.owner}/${r.repo}`, ref: r.ref, plugins };
 }
 
-export async function addMarketplace(dataDir: string, repoText: string, fetchFn: typeof fetch = fetch): Promise<Marketplace> {
-  const m = await readMarketplace(repoText, fetchFn);
+async function keepMarketplace(dataDir: string, m: Marketplace): Promise<void> {
   const s = await loadPlugins(dataDir);
   s.marketplaces = [...s.marketplaces.filter((x) => x.name !== m.name), m];
   await save(dataDir, s);
+}
+
+export async function addMarketplace(dataDir: string, repoText: string, fetchFn: typeof fetch = fetch): Promise<Marketplace> {
+  const m = await readMarketplace(repoText, fetchFn);
+  await keepMarketplace(dataDir, m);
   return m;
+}
+
+/** Marketplaces made for a single plugin repo are named this way; they are not re-read like real ones. */
+export const DIRECT = 'github:';
+
+/**
+ * One address for both kinds of repo: a marketplace (.claude-plugin/marketplace.json) is added so its plugins can be
+ * picked; a single plugin (plugin.json or skills/<name>/SKILL.md) is installed right away.
+ */
+export async function addFromGitHub(dataDir: string, mcp: Mcp, text: string, fetchFn: typeof fetch = fetch):
+  Promise<{ kind: 'marketplace'; marketplace: Marketplace } | { kind: 'plugin'; installed: Installed }> {
+  const g = parseRepo(text);
+  if (!g) throw new Error('GitHub 주소가 아니에요 (예: obra/superpowers 또는 https://github.com/obra/superpowers)');
+  const r: Repo = { owner: g.owner, repo: g.repo, ref: g.ref ?? await defaultBranch(g.owner, g.repo, fetchFn) };
+  const market = g.dir ? null : await marketplaceAt(r, fetchFn);
+  if (market) {
+    await keepMarketplace(dataDir, market);
+    return { kind: 'marketplace', marketplace: market };
+  }
+  const prefix = g.dir ? `${g.dir}/` : '';
+  const rels = (await tree(r, fetchFn)).filter((f) => f.path.startsWith(prefix)).map((f) => f.path.slice(prefix.length));
+  const manifest = rels.find((p) => p === '.claude-plugin/plugin.json' || p === '.codex-plugin/plugin.json');
+  if (!manifest && !rels.some((p) => /^skills\/[^/]+\/SKILL\.md$/.test(p))) {
+    throw new Error('플러그인 저장소가 아니에요: marketplace.json도, plugin.json이나 skills/ 폴더도 없어요');
+  }
+  const meta = manifest ? JSON.parse(await rawText(r, `${prefix}${manifest}`, fetchFn)) as { name?: string; description?: string; version?: string } : {};
+  const name = skillIdFor(String(meta.name ?? (g.dir ? path.posix.basename(g.dir) : r.repo)));
+  await keepMarketplace(dataDir, {
+    name: `${DIRECT}${r.owner}/${r.repo}${g.dir ? `/${g.dir}` : ''}`, repo: `${r.owner}/${r.repo}`, ref: r.ref,
+    plugins: [{ name, description: String(meta.description ?? ''), version: meta.version, source: g.dir ? `./${g.dir}` : './' }],
+  });
+  return { kind: 'plugin', installed: await installPlugin(dataDir, mcp, `${DIRECT}${r.owner}/${r.repo}${g.dir ? `/${g.dir}` : ''}`, name, fetchFn) };
 }
 
 export async function removeMarketplace(dataDir: string, name: string): Promise<void> {

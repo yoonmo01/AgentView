@@ -71,8 +71,8 @@ h2.sub, h3.sub { font-size: 13px; color: var(--muted); margin: 10px 0 2px; }
 .drawer.shown { transform: none; visibility: visible; transition: transform 0.3s var(--ease), visibility 0s; }
 .drawer > header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .drawer > header .tabs { margin: 0; flex: 1; }
-.drawer .admin { flex: 1; overflow: auto; display: grid; grid-template-columns: 1fr; gap: 14px; padding: 14px; align-content: start; }
-.drawer .admin aside, .drawer .admin section { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
+.drawer .admin { flex: 1; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 14px; align-content: start; }
+.drawer .admin aside, .drawer .admin section { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
 .drawer .admin aside { display: grid; gap: 8px; align-content: start; }
 .drawer .admin aside h2 { margin: 0; }
 
@@ -220,7 +220,7 @@ input[type='radio']:checked::after { content: ''; width: 6px; height: 6px; borde
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; word-break: break-all; }
 .tool-list { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--line); border-radius: 8px; }
-.tool-list li { display: grid; grid-template-columns: 170px 1fr; gap: 10px; padding: 6px 10px; border-top: 1px solid var(--line); align-items: baseline; }
+.tool-list li { display: grid; grid-template-columns: minmax(0, 150px) minmax(0, 1fr); gap: 10px; padding: 6px 10px; border-top: 1px solid var(--line); align-items: baseline; }
 .tool-list li:first-child { border-top: 0; }
 .tool-list code { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .tool-list small { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -391,18 +391,18 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 
 /* settings: tools page */
 .tools-page { overflow: auto; padding: 14px; display: grid; gap: 12px; align-content: start; }
-.tool-list { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-.tool-list h2, .tools-sub { margin: 0 0 4px; font-size: 15px; }
-.tool-list ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
-.tool-list li { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-top: 1px solid var(--line); }
-.tool-list li:first-child { border-top: 0; }
-.tool-list li > div { flex: 1; display: grid; gap: 1px; }
-.tool-list code { font-size: 11px; color: var(--muted); }
-.tool-list small { color: var(--muted); }
-.tool-list .users { display: inline-flex; }
-.tool-list .users .avatar { width: 20px; height: 20px; font-size: 10px; margin-left: -4px; box-shadow: 0 0 0 2px #fff; }
+.tool-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.tool-card h2, .tools-sub { margin: 0 0 4px; font-size: 15px; }
+.tool-card ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.tool-card li { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-top: 1px solid var(--line); }
+.tool-card li:first-child { border-top: 0; }
+.tool-card li > div { flex: 1; display: grid; gap: 1px; }
+.tool-card code { font-size: 11px; color: var(--muted); }
+.tool-card small { color: var(--muted); }
+.tool-card .users { display: inline-flex; }
+.tool-card .users .avatar { width: 20px; height: 20px; font-size: 10px; margin-left: -4px; box-shadow: 0 0 0 2px #fff; }
 .tools-sub { padding: 4px 2px 0; }
-.tools-page > .admin { min-height: 420px; }
+.tools-page > .admin { overflow: visible; padding: 0; } /* part of the page, no scroll box of its own */
 
 /* skills */
 .admin .import { display: grid; gap: 4px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
@@ -421,11 +421,16 @@ dialog.ask button:not(.danger) { background: #fff; border: 1px solid var(--line)
 .plugins-page .error, .plugins-page .ok { margin: 0; }
 .inline-add { display: flex; gap: 6px; margin-top: 6px; }
 .inline-add input { flex: 1; }
-.tool-list li > button { flex: none; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 3px 10px; font-size: 12px; }
-.tool-list li > button.primary { background: var(--accent); border-color: var(--accent); }
-.tool-list li > button.danger { color: #b42525; }
-.tool-list .search { width: 100%; margin: 6px 0 2px; }
+.tool-card li > button { flex: none; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 3px 10px; font-size: 12px; }
+.tool-card li > button.primary { background: var(--accent); border-color: var(--accent); }
+.tool-card li > button.danger { color: #b42525; }
+.tool-card .search { width: 100%; margin: 6px 0 2px; }
 .plugin-parts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .plugin-parts span { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
 .plugin-parts span.off { color: var(--muted); border-style: dashed; }
-.tool-list .warn { color: #a35a00; }
+.tool-card .warn { color: #a35a00; }
+
+.facts dd { min-width: 0; overflow-wrap: anywhere; }
+.empty-note.intro { max-width: none; font-size: 14px; color: var(--text); line-height: 1.7; }
+.empty-note.intro p { white-space: nowrap; margin: 8px 0; }
+@media (max-width: 760px) { .empty-note.intro p { white-space: normal; } }

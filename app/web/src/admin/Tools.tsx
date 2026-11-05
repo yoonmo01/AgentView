@@ -17,7 +17,7 @@ export function Tools({ onChanged }: { onChanged?: () => void }) {
   }, []);
   return (
     <div className="tools-page">
-      <section className="tool-list">
+      <section className="tool-card">
         <h2>기본 도구</h2>
         <p className="muted small">AgentView에 들어 있는 도구예요. 에이전트 설정에서 에이전트마다 켜고 꺼요.</p>
         <ul>

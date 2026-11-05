@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createMcp } from '../src/mcp.ts';
-import { addMarketplace, installPlugin, loadPlugins, uninstallPlugin } from '../src/plugins.ts';
+import { addFromGitHub, addMarketplace, installPlugin, loadPlugins, uninstallPlugin } from '../src/plugins.ts';
 import { listSkills, loadSkill } from '../src/skills.ts';
 import { fakeGithub } from './fakeGithub.ts';
 import { memoryTransport } from './mcp.test.ts';
@@ -49,6 +49,20 @@ describe('plugins', () => {
     expect(mcp.has('helper-tools')).toBe(false);
     expect((await listSkills(dir)).map((s) => s.id)).toEqual(['outside-solo']);
     expect((await loadPlugins(dir)).installed.map((x) => x.name)).toEqual(['outside']);
+    await mcp.closeAll();
+  });
+
+  it('one address: adds a marketplace, installs a single plugin repo right away, refuses anything else', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'av-plugins-'));
+    const gh = fakeGithub({ ...repos,
+      'acme/solo': { '.claude-plugin/plugin.json': JSON.stringify({ name: 'Solo', description: 'one plugin', version: '2.0.0' }), 'skills/tidy/SKILL.md': '---\nname: tidy\n---\n' },
+      'acme/bare': { 'README.md': 'nothing here' } });
+    const mcp = createMcp(dir, { transport: memoryTransport, cleanup: async () => {} });
+    expect(await addFromGitHub(dir, mcp, 'https://github.com/acme/market', gh)).toMatchObject({ kind: 'marketplace', marketplace: { name: 'acme' } });
+    const solo = await addFromGitHub(dir, mcp, 'acme/solo', gh);
+    expect(solo).toMatchObject({ kind: 'plugin', installed: { name: 'solo', version: '2.0.0', skills: ['solo-tidy'] } });
+    await expect(addFromGitHub(dir, mcp, 'acme/bare', gh)).rejects.toThrow('플러그인 저장소가 아니에요');
+    expect((await loadPlugins(dir)).marketplaces.map((m) => m.name)).toEqual(['acme', 'github:acme/solo']);
     await mcp.closeAll();
   });
 

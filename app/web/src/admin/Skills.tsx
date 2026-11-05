@@ -84,9 +84,10 @@ export function Skills() {
       <section>
         {msg && <p className={msg.error ? 'error' : 'ok'} role="status">{msg.text}</p>}
         {!form ? (
-          <div className="empty-note">
-            <p>스킬은 에이전트가 특정 일을 할 때 따르는 <b>절차·규칙·지식</b>이에요. 에이전트 설정에서 고르면, 일이 맞을 때 에이전트가 스스로 읽고 따라요.</p>
-            <p>왼쪽에서 고르거나 새로 만들거나 GitHub 폴더 주소로 가져오세요.</p>
+          <div className="empty-note intro">
+            <p>스킬은 특정 일을 할 때 따르는 <b>절차·규칙·지식</b>이에요.</p>
+            <p>에이전트 설정에서 고르면, 일이 맞을 때 스스로 읽고 따라요.</p>
+            <p>위에서 새로 만들거나 GitHub 폴더 주소로 가져오세요.</p>
           </div>
         ) : (
           <form onSubmit={save} className="form">
@@ -101,6 +102,14 @@ export function Skills() {
             <label>한 줄 설명 (에이전트가 보고 쓸지 판단해요)
               <input maxLength={1000} value={form.description} disabled={readOnly} placeholder="예: 파이썬 코드를 체크리스트로 리뷰할 때" onChange={(e) => set({ description: e.target.value })} />
             </label>
+            <div className="skill-body">
+              <div className="skill-body-head">
+                <span>본문 (절차·규칙·지식, 마크다운)</span>
+                {!readOnly && <button type="button" onClick={() => setPreview(!preview)}>{preview ? '편집' : '미리보기'}</button>}
+              </div>
+              {readOnly || preview ? <Markdown text={form.body} className="skill-preview" />
+                : <textarea rows={14} value={form.body} placeholder={'1. 먼저 …를 확인한다\n2. …'} onChange={(e) => set({ body: e.target.value })} />}
+            </div>
             <fieldset>
               <legend>필요한 도구 (이 스킬을 쓰는 에이전트에게 켜져 있어야 해요)</legend>
               {readOnly ? <p className="muted small">{form.allowedTools.join(', ') || '없음'}</p> : tools.map((t) => (
@@ -111,14 +120,6 @@ export function Skills() {
                 </label>
               ))}
             </fieldset>
-            <div className="skill-body">
-              <div className="skill-body-head">
-                <span>본문 (절차·규칙·지식, 마크다운)</span>
-                {!readOnly && <button type="button" onClick={() => setPreview(!preview)}>{preview ? '편집' : '미리보기'}</button>}
-              </div>
-              {readOnly || preview ? <Markdown text={form.body} className="skill-preview" />
-                : <textarea rows={14} value={form.body} placeholder={'1. 먼저 …를 확인한다\n2. …'} onChange={(e) => set({ body: e.target.value })} />}
-            </div>
             {form.files.length > 1 && <p className="muted small">스킬 폴더 파일: {form.files.join(', ')}</p>}
             <div className="actions">
               {!readOnly && <button className="primary" type="submit">저장</button>}

@@ -9,7 +9,7 @@ import {
   AGENT_ID, agentExists, assignColor, assignRoom, checkAgent, checkTeam, deleteAgent, deleteTeam, listAgents, listTeams, loadAgent, loadConnections,
   resolve, saveAgent, saveTeam, teamExists, teamWithDefaults, withDefaults, type Agent, type ChatFn, type Team,
 } from './store.ts';
-import { addMarketplace, installPlugin, loadPlugins, removeMarketplace, uninstallPlugin } from './plugins.ts';
+import { addFromGitHub, addMarketplace, installPlugin, loadPlugins, removeMarketplace, uninstallPlugin } from './plugins.ts';
 import { deleteSkill, importSkill, listSkills, loadSkill, saveSkill, SKILL_ID } from './skills.ts';
 import { containerPath, listTools, runTool, toolDefs, type ExecFn } from './tools.ts';
 
@@ -251,8 +251,9 @@ export function buildApp(opts: {
   const nameParams = { type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 1, maxLength: 100 } } };
   const pluginError = (reply: FastifyReply, e: unknown) => reply.code(400).send({ error: (e as Error).message });
   app.get('/plugins', async () => loadPlugins(opts.dataDir));
-  app.post('/plugins/marketplaces', { schema: { body: { type: 'object', required: ['repo'], additionalProperties: false, properties: { repo: { type: 'string', maxLength: 300 } } } } },
-    async (req, reply) => addMarketplace(opts.dataDir, (req.body as { repo: string }).repo, opts.fetch).catch((e) => pluginError(reply, e)));
+  // one address: a marketplace is added for picking, a single plugin repo is installed right away
+  app.post('/plugins/add', { schema: { body: { type: 'object', required: ['repo'], additionalProperties: false, properties: { repo: { type: 'string', maxLength: 300 } } } } },
+    async (req, reply) => addFromGitHub(opts.dataDir, mcp, (req.body as { repo: string }).repo, opts.fetch).catch((e) => pluginError(reply, e)));
   app.post('/plugins/marketplaces/:name/refresh', { schema: { params: nameParams } }, async (req, reply) => {
     const m = (await loadPlugins(opts.dataDir)).marketplaces.find((x) => x.name === (req.params as { name: string }).name);
     if (!m) return reply.code(404).send({ error: 'marketplace not found' });
