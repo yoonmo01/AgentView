@@ -80,7 +80,8 @@ export function buildApp(opts: {
   /** starts building the agent's sandbox image when it has extra packages */ prepareEnv?: (agent: Agent) => Promise<unknown>;
   /** for copying skills from GitHub; tests pass a fake */ fetch?: typeof fetch;
 }) {
-  const app = Fastify();
+  // The built web calls /api/...; the dev proxy strips that prefix, so in production strip it here.
+  const app = Fastify({ rewriteUrl: (req) => req.url!.replace(/^\/api(?=\/|\?|$)/, '') || '/' });
   const bus = createBus(path.join(opts.dataDir, 'runs'));
   const running = new Map<string, AbortController>();
   const exec: ExecFn = opts.exec ?? ((agent, command, timeoutSec, signal) => runInSandbox(agent, opts.dataDir, command, timeoutSec, signal));
