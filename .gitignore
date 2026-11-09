@@ -225,3 +225,6 @@ __marimo__/
 docs/
 .playwright-cli/
 .env
+
+# Separate repo (GitLab yoonmo/lit-knowledge-hub-view), cloned here for side-by-side work
+/lit-knowledge-hub-view/
